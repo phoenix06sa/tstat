@@ -463,9 +463,18 @@ export default function Home() {
             </div>
 
             {/* Footer */}
-            <div className="text-center text-zinc-700 text-xs pb-4">
-              Data from AES · {data.teamCode} · {data.division}<br />
-              Auto-refreshes every 90 seconds
+            <div className="text-center text-zinc-700 text-xs pb-4 space-y-2">
+              <div>{data.teamCode} · {data.division} · Auto-refreshes every 90s</div>
+              <div>
+                <a
+                  href="https://results.advancedeventsystems.com/event/PTAwMDAwNDIwNDA90/divisions/207190/overview"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-zinc-600 hover:text-zinc-400 underline transition-colors"
+                >
+                  View previous tournament results (Salt Lake City Showdown, May 1-3)
+                </a>
+              </div>
             </div>
           </>
         )}
