@@ -159,6 +159,7 @@ export async function GET() {
         // 1st place faces Pool 6's 2nd; 2nd place faces Pool 6's 1st
         const opponentWantRank = f.PotentialRank === 1 ? 2 : 1;
         const opponentResolved = resolveOpponent(pool6Teams, opponentWantRank);
+        const finishRange = 'Win -> Silver bracket (finish 1st or 2nd of 64)\nLose -> Gold bracket (finish 3rd–16th of 64)';
         futurePaths.push({
           finishText: f.PotentialRankText,
           rank: f.PotentialRank,
@@ -171,6 +172,7 @@ export async function GET() {
           saturdayEvening: true,
           opponentResolved,
           opponentPoolLabel: `Pool 6 (GRB Ct 11): ${pool6Label}`,
+          finishRange,
         });
       }
     }
@@ -187,6 +189,7 @@ export async function GET() {
       workTime: '9:30 AM Sun',
       saturdayEvening: false,
       note: 'No Saturday evening match — straight to Sunday Bronze B',
+      finishRange: '4 teams · finish 17th–32nd of 64',
     });
     futurePaths.push({
       finishText: '4th-P5',
@@ -199,6 +202,7 @@ export async function GET() {
       workTime: '10:30 AM Sun',
       saturdayEvening: false,
       note: 'No Saturday evening match — straight to Sunday Flight 1C',
+      finishRange: '4 teams · finish 33rd–48th of 64',
     });
 
     // --- Sunday bracket info (with live team seeding once populated) ---

@@ -20,6 +20,7 @@ interface FuturePath {
   opponentPool?: string;
   opponentResolved?: string;
   opponentPoolLabel?: string;
+  finishRange?: string;
 }
 interface SundayBracket {
   name: string; shortName: string; courts: string[];
@@ -261,6 +262,16 @@ export default function Home() {
                           </div>
                           <div className="font-semibold text-white">{f.nextPlayShort}</div>
                           <div className="text-zinc-400 text-sm">{f.nextPlay}</div>
+                          {f.finishRange && f.saturdayEvening && (
+                            <div className="mt-1 bg-zinc-800 rounded-lg px-3 py-2 text-xs space-y-0.5">
+                              {f.finishRange.split('\n').map((line, i) => (
+                                <div key={i} className={i === 0 ? 'text-emerald-400' : 'text-zinc-400'}>{line}</div>
+                              ))}
+                            </div>
+                          )}
+                          {f.finishRange && !f.saturdayEvening && (
+                            <div className="mt-1 bg-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-400">{f.finishRange}</div>
+                          )}
                           {(f.opponentResolved || f.opponentSeed) && (
                             <div className="mt-1 text-sm">
                               <span className="text-zinc-500 text-xs block">Opponent</span>
