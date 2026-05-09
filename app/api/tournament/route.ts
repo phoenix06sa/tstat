@@ -290,91 +290,208 @@ export async function GET(req: Request) {
       return null;
     };
 
-    // --- Build future paths ---
+    // --- Build future paths (all 4 pool finish scenarios) ---
+    // We always show all 4 paths based on pool finish, regardless of which play we're in now.
+    // 1st/2nd go to Saturday evening challenge brackets -> then Sunday Gold/Silver
+    // 3rd/4th skip Saturday evening -> directly to Sunday Bronze/Flight
+    //
+    // Strategy:
+    // - 1st/2nd: use bracketOpponentPoolMap to find the challenge bracket + opponent
+    //   and findSundayForChBrkt to find Sunday destination
+    // - 3rd/4th: pool standings now have finishRank. Find those actual teams and
+    //   search day2 by team name (AES replaces "3rd-P5" tags with real names post-pool)
+
     const futurePaths: object[] = [];
 
-    if (future) {
-      for (const f of future) {
-        const brktName = f.NextPlay?.FullName; // e.g. "Challenge Bracket #5"
-        const brktShortName = f.NextPlay?.ShortName; // e.g. "ChBrkt#5"
-        const rank = f.PotentialRank; // 1 or 2
+    // Get sorted pool standings for rank lookup
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sortedStandings = [...rawTeams].sort((a: any, b: any) => (a.FinishRank ?? 99) - (b.FinishRank ?? 99));
 
-        // Opponent pool: the OTHER pool that feeds into this bracket
+    // Find which challenge bracket our pool feeds at rank 1 and 2
+    // Look at the Saturday bracket data. After pool play, AES replaces seed text with real teams.
+    // Match by TeamCode in FirstTeam.Code / SecondTeam.Code
+    const ourPoolChBrkts: Record<number, string> = {}; // rank -> bracketName
+    const satBrackets = day1.filter((p: { PlayType: number }) => p.PlayType === 1);
+    // Build a map of teamCode -> bracket + slot (1=first, 2=second)
+    for (const brkt of satBrackets) {
+      for (const root of (brkt.Roots || [])) {
+        const m = root.Match || {};
+        const firstCode: string = m.FirstTeam?.Code || '';
+        const secondCode: string = m.SecondTeam?.Code || '';
+        // Check if any of our pool teams are in this bracket
+        for (const t of rawTeams) {
+          const tc: string = t.TeamCode?.toLowerCase() || '';
+          if (firstCode.toLowerCase() === tc || secondCode.toLowerCase() === tc) {
+            // This bracket contains one of our pool's teams -> find their pool rank
+            const rank = t.FinishRank;
+            if (rank && rank <= 2) {
+              ourPoolChBrkts[rank] = brkt.FullName;
+            }
+          }
+        }
+      }
+    }
+
+    // Helper: find which Sunday bracket contains a specific team name text
+    const findSundayForTeamText = (teamText: string): { bracketName: string; court: string; time: string; workCourt: string; workTime: string } | null => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const findMatchWithTeam = (node: any): any => {
+        if (!node) return null;
+        const m = node.Match || {};
+        if (m.FirstTeamText === teamText || m.SecondTeamText === teamText) return { match: m, rootMatch: null };
+        return findMatchWithTeam(node.TopSource) || findMatchWithTeam(node.BottomSource);
+      };
+      for (const b of day2) {
+        if (!b || typeof b !== 'object') continue;
+        const sources = extractAllSources(b);
+        if (!sources.has(teamText)) continue;
+        for (const r of (b.Roots || [])) {
+          const result = findMatchWithTeam(r.TopSource) || findMatchWithTeam(r.BottomSource);
+          if (result) {
+            const m = result.match;
+            const rootM = r.Match || {};
+            return {
+              bracketName: b.FullName,
+              court: m.Court?.Name || rootM.Court?.Name || '',
+              time: fmtTime(m.ScheduledStartDateTime || rootM.ScheduledStartDateTime),
+              workCourt: rootM.Court?.Name || '',
+              workTime: fmtTime(rootM.ScheduledStartDateTime),
+            };
+          }
+        }
+        return { bracketName: b.FullName, court: '', time: '', workCourt: '', workTime: '' };
+      }
+      return null;
+    };
+
+    // Build paths for all 4 pool finish ranks
+    for (let poolRank = 1; poolRank <= 4; poolRank++) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const teamAtRank: any = sortedStandings[poolRank - 1];
+      const isUs = teamAtRank?.TeamCode?.toLowerCase() === teamCode.toLowerCase();
+      const rankText = teamAtRank?.FinishRankText || `${poolRank}${poolRank === 1 ? 'st' : poolRank === 2 ? 'nd' : poolRank === 3 ? 'rd' : 'th'}`;
+      const finishText = `${rankText}-P${poolNumber}`;
+
+      if (poolRank <= 2) {
+        // Saturday evening challenge bracket path
+        // After pool play, future API returns Sunday bracket directly (Gold/Silver)
+        // But we still need the challenge bracket as the intermediate step.
+        // Use the future API for timing and Sunday destination; derive ChBrkt name from ourPoolChBrkts
+        const brktName = ourPoolChBrkts[poolRank];
+        const brktShortName = brktName?.replace('Challenge Bracket #', 'ChBrkt#') || '';
+
+        // Opponent: find the other pool/rank that feeds this bracket
         const brktPools = bracketOpponentPoolMap[brktName] || {};
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const opponentPool: any = Object.entries(brktPools).find(([r, p]: [string, any]) =>
-          Number(r) !== rank && (p as any).FullName !== ourPool.FullName
-        )?.[1];
+        const opponentEntry = Object.entries(brktPools).find(([r, p]: [string, any]) =>
+          Number(r) !== poolRank && (p as any).FullName !== ourPool.FullName
+        );
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const opponentPool: any = opponentEntry?.[1];
+        const opponentWantRank = opponentEntry ? Number(opponentEntry[0]) : 1;
         const opponentPoolTeams = opponentPool?.Teams || [];
-        const opponentWantRank = rank === 1
-          ? Object.keys(brktPools).find(r => Number(r) !== 1 && brktPools[r].FullName !== ourPool.FullName) ? 2 : 1
-          : 1;
-        const opponentResolved = resolveOpponent(opponentPoolTeams, opponentWantRank);
-        const opponentPoolLabel = opponentPool
-          ? `${opponentPool.FullName} (${opponentPool.Courts?.[0]?.Name || ''}): ${opponentPoolTeams.map((t: { TeamName: string }) => t.TeamName).join(' · ')}`
-          : 'Opponent pool TBD';
 
-        // Where does winner/loser go on Sunday?
+        // Check if the real opponent is now known from current bracket match
+        let opponentResolved = resolveOpponent(opponentPoolTeams, opponentWantRank);
+        let opponentPoolLabel = opponentPool
+          ? `${opponentPool.FullName} (${opponentPool.Courts?.[0]?.Name || ''}): ${opponentPoolTeams.map((t: { TeamName: string }) => t.TeamName).join(' · ')}`
+          : 'Opponent TBD';
+
+        // If this IS our current bracket (i.e. we are in it), use the real match data
+        if (current && isUs) {
+          for (const block of current) {
+            if (block.Play?.ShortName === brktShortName || block.Play?.FullName === brktName) {
+              for (const m of (block.Matches || [])) {
+                const iFirst = m.FirstTeamId === Number(TEAM_ID);
+                const realOpp = iFirst ? m.SecondTeamName : m.FirstTeamName;
+                const realOppCode = iFirst ? m.SecondTeamCode : m.FirstTeamCode;
+                opponentResolved = `${realOpp}${realOppCode ? ` (${realOppCode})` : ''} — confirmed`;
+                opponentPoolLabel = '';
+              }
+            }
+          }
+        }
+
+        // Sunday destinations
         const winnerSunday = findSundayForChBrkt(brktShortName, 'Winner');
         const loserSunday = findSundayForChBrkt(brktShortName, 'Loser');
-
         const finishRange = [
-          winnerSunday ? `Win -> ${winnerSunday.bracketName} (top bracket)` : 'Win -> TBD',
-          loserSunday ? `Lose -> ${loserSunday.bracketName} (mid-tier)` : 'Lose -> TBD',
+          winnerSunday ? `Win -> ${winnerSunday.bracketName}` : 'Win -> TBD',
+          loserSunday ? `Lose -> ${loserSunday.bracketName}` : 'Lose -> TBD',
         ].join('\n');
 
+        // Get match time/court from current bracket match or future API
+        let court = '', time = '', workCourt = '', workTime = '';
+        // First try: live current bracket match (most accurate)
+        if (current) {
+          for (const block of current) {
+            if (block.Play?.FullName === brktName || block.Play?.ShortName === brktShortName) {
+              const m = block.Matches?.[0];
+              if (m) {
+                court = m.Court?.Name || '';
+                time = fmtTime(m.ScheduledStartDateTime);
+                workCourt = m.Court?.Name || ''; // work is after on same court
+                workTime = ''; // not directly available from current
+              }
+            }
+          }
+        }
+        // Second try: future API — rank 1 always maps to index 0, rank 2 to index 1
+        if (!court && future && future.length >= poolRank) {
+          const fEntry = future[poolRank - 1];
+          // Note: after pool play future returns Sunday times, not Saturday bracket
+          // So fall back to bracketOpponentPoolMap for the Saturday time
+          // Use the challenge bracket play from day1 directly
+          const brktPlay = satBrackets.find((b: { FullName: string }) => b.FullName === brktName);
+          if (brktPlay?.Roots?.[0]?.Match) {
+            const bm = brktPlay.Roots[0].Match;
+            court = bm.Court?.Name || '';
+            time = fmtTime(bm.ScheduledStartDateTime);
+            // Work assignment is in the /schedule/work endpoint, approximate from fEntry
+            workCourt = fEntry?.WorkMatch?.Court?.Name || court;
+            workTime = fmtTime(fEntry?.WorkMatch?.ScheduledStartDateTime);
+          }
+        }
+
         futurePaths.push({
-          finishText: f.PotentialRankText,
-          rank,
-          nextPlay: f.NextPlay?.CompleteFullName,
-          nextPlayShort: brktName,
-          court: f.NextMatch?.Court?.Name,
-          time: fmtTime(f.NextMatch?.ScheduledStartDateTime),
-          workCourt: f.WorkMatch?.Court?.Name,
-          workTime: fmtTime(f.WorkMatch?.ScheduledStartDateTime),
+          finishText,
+          rank: poolRank,
+          isUs,
+          teamAtRank: teamAtRank?.TeamName || '',
+          nextPlay: `Round 2 Group 1 ${brktName}`,
+          nextPlayShort: brktName || 'Challenge Bracket',
+          court,
+          time,
+          workCourt,
+          workTime,
           saturdayEvening: true,
           opponentResolved,
           opponentPoolLabel,
           finishRange,
         });
+
+      } else {
+        // 3rd/4th — no Saturday evening match, straight to Sunday
+        // Find their Sunday bracket by their team text (AES uses "<TeamName> (LS)" format)
+        const teamText = teamAtRank ? `${teamAtRank.TeamName} (LS)` : '';
+        const sundayInfo = teamText ? findSundayForTeamText(teamText) : null;
+
+        futurePaths.push({
+          finishText,
+          rank: poolRank,
+          isUs,
+          teamAtRank: teamAtRank?.TeamName || '',
+          nextPlay: sundayInfo ? `Round 3 Group 1 ${sundayInfo.bracketName} (Sunday)` : 'Sunday bracket TBD',
+          nextPlayShort: sundayInfo?.bracketName || 'TBD',
+          court: sundayInfo?.court || '',
+          time: sundayInfo?.time || '',
+          workCourt: sundayInfo?.workCourt || '',
+          workTime: sundayInfo?.workTime || '',
+          saturdayEvening: false,
+          note: 'No Saturday evening match — straight to Sunday bracket',
+          finishRange: sundayInfo ? `4 teams · ${sundayInfo.bracketName}` : '4 teams',
+        });
       }
-    }
-
-    // 3rd and 4th — find dynamically from Sunday bracket source tags
-    const thirdTag = `3rd-P${poolNumber}`;
-    const fourthTag = `4th-P${poolNumber}`;
-    const thirdInfo = findSundayBracketForTag(thirdTag);
-    const fourthInfo = findSundayBracketForTag(fourthTag);
-
-    if (thirdInfo) {
-      futurePaths.push({
-        finishText: `3rd-P${poolNumber}`,
-        rank: 3,
-        nextPlay: `Round 3 Group 1 ${thirdInfo.bracketName} (Sunday)`,
-        nextPlayShort: thirdInfo.bracketName,
-        court: thirdInfo.court,
-        time: thirdInfo.time,
-        workCourt: thirdInfo.workCourt,
-        workTime: thirdInfo.workTime,
-        saturdayEvening: false,
-        note: 'No Saturday evening match — straight to Sunday bracket',
-        finishRange: `4 teams · ${thirdInfo.bracketName}`,
-      });
-    }
-    if (fourthInfo) {
-      futurePaths.push({
-        finishText: `4th-P${poolNumber}`,
-        rank: 4,
-        nextPlay: `Round 3 Group 1 ${fourthInfo.bracketName} (Sunday)`,
-        nextPlayShort: fourthInfo.bracketName,
-        court: fourthInfo.court,
-        time: fourthInfo.time,
-        workCourt: fourthInfo.workCourt,
-        workTime: fourthInfo.workTime,
-        saturdayEvening: false,
-        note: 'No Saturday evening match — straight to Sunday bracket',
-        finishRange: `4 teams · ${fourthInfo.bracketName}`,
-      });
     }
 
     // --- Sunday bracket info ---

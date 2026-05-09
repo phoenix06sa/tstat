@@ -10,7 +10,7 @@ interface PoolMatch {
 }
 interface WorkAssignment { play: string; time: string; date: string; court: string }
 interface FuturePath {
-  finishText: string; rank: number;
+  finishText: string; rank: number; isUs?: boolean; teamAtRank?: string;
   nextPlay: string; nextPlayShort: string;
   court: string; time: string;
   workCourt: string | null; workTime: string | null;
@@ -337,11 +337,16 @@ export default function Home() {
                 <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Bracket Paths</div>
                 <div className="space-y-3">
                   {data.futurePaths.map((f, i) => (
-                    <div key={i} className={`bg-zinc-900 rounded-xl border p-4 ${f.saturdayEvening ? 'border-zinc-800' : 'border-zinc-700'}`}>
+                    <div key={i} className={`bg-zinc-900 rounded-xl border p-4 ${f.isUs ? 'border-yellow-700' : f.saturdayEvening ? 'border-zinc-800' : 'border-zinc-700'}`}>
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1">
                           <div className="text-xs text-zinc-500 mb-1">
-                            If they finish <span className="text-yellow-400 font-semibold">{f.finishText}</span>
+                            If pool finishes <span className="text-yellow-400 font-semibold">{f.finishText}</span>
+                            {f.teamAtRank && (
+                              <span className={`ml-2 font-semibold ${f.isUs ? 'text-yellow-300' : 'text-zinc-400'}`}>
+                                — {f.isUs ? '★ ' : ''}{f.teamAtRank}
+                              </span>
+                            )}
                           </div>
                           <div className="font-semibold text-white">{f.nextPlayShort}</div>
                           <div className="text-zinc-400 text-sm">{f.nextPlay}</div>
