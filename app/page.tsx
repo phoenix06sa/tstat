@@ -19,6 +19,9 @@ interface FuturePath {
   opponentResolved?: string;
   opponentPoolLabel?: string;
   finishRange?: string;
+  hasScores?: boolean;
+  weWon?: boolean | null;
+  sets?: SetScore[];
 }
 interface SundayBracket {
   name: string; shortName: string; courts: string[];
@@ -279,41 +282,7 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Bracket matches */}
-            {data.poolMatches.some(m => !m.isPoolPlay) && (
-              <div>
-                <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Bracket Matches</div>
-                <div className="space-y-3">
-                  {data.poolMatches.filter(m => !m.isPoolPlay).map((m, i) => (
-                    <div key={i} className={`bg-zinc-900 rounded-xl border p-4 ${
-                      m.weWon === true ? 'border-emerald-800' :
-                      m.weWon === false ? 'border-red-900' : 'border-blue-800'
-                    }`}>
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1 flex-wrap">
-                            <span className="text-xs text-blue-400 font-semibold">BRACKET</span>
-                            <span className="text-xs text-zinc-500 font-mono">{m.matchName}</span>
-                            <span className="text-xs text-zinc-600">{m.date} {m.time}</span>
-                            <span className="text-xs text-zinc-600">{m.court}</span>
-                          </div>
-                          <div className="font-semibold text-white text-base">vs {m.opponent}</div>
-                          <div className="text-zinc-600 text-xs mb-2">{m.opponentCode}</div>
-                          <SetScores sets={m.sets} hasScores={m.hasScores} />
-                        </div>
-                        {m.weWon !== null ? (
-                          <div className={`text-xs font-bold px-2 py-1 rounded shrink-0 ${m.weWon ? 'bg-emerald-900 text-emerald-300' : 'bg-red-900 text-red-300'}`}>
-                            {m.weWon ? 'WIN' : 'LOSS'}
-                          </div>
-                        ) : (
-                          <div className="text-xs font-bold px-2 py-1 rounded shrink-0 bg-blue-900 text-blue-300">LIVE</div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            {/* Work assignments */}
             {data.workAssignments.length > 0 && (
               <div>
                 <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Work / Ref Assignments</div>
@@ -331,63 +300,91 @@ export default function Home() {
               </div>
             )}
 
-            {/* Bracket paths */}
+            {/* Bracket Paths — one card per pool finish, facts once known */}
             {data.futurePaths.length > 0 && (
               <div>
-                <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Bracket Paths</div>
+                <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Bracket Play</div>
                 <div className="space-y-3">
-                  {data.futurePaths.map((f, i) => (
-                    <div key={i} className={`bg-zinc-900 rounded-xl border p-4 ${f.isUs ? 'border-yellow-700' : f.saturdayEvening ? 'border-zinc-800' : 'border-zinc-700'}`}>
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1">
-                          <div className="text-xs text-zinc-500 mb-1">
-                            If pool finishes <span className="text-yellow-400 font-semibold">{f.finishText}</span>
-                            {f.teamAtRank && (
-                              <span className={`ml-2 font-semibold ${f.isUs ? 'text-yellow-300' : 'text-zinc-400'}`}>
-                                — {f.isUs ? '★ ' : ''}{f.teamAtRank}
-                              </span>
-                            )}
-                          </div>
-                          <div className="font-semibold text-white">{f.nextPlayShort}</div>
-                          <div className="text-zinc-400 text-sm">{f.nextPlay}</div>
-                          {f.finishRange && (
-                            <div className={`mt-1 bg-zinc-800 rounded-lg px-3 py-2 text-xs ${f.saturdayEvening ? 'space-y-0.5' : ''}`}>
-                              {f.saturdayEvening ? f.finishRange.split('\n').map((line, li) => (
-                                <div key={li} className={li === 0 ? 'text-emerald-400' : 'text-zinc-400'}>{line}</div>
-                              )) : (
-                                <div className="text-zinc-400">{f.finishRange}</div>
+                  {data.futurePaths.map((f, i) => {
+                    const isDone = f.hasScores;
+                    const borderColor = f.isUs
+                      ? isDone
+                        ? f.weWon ? 'border-emerald-700' : 'border-red-800'
+                        : 'border-yellow-700'
+                      : 'border-zinc-800';
+                    return (
+                      <div key={i} className={`bg-zinc-900 rounded-xl border p-4 ${borderColor}`}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1">
+                            {/* Header: rank + team */}
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              <span className="text-xs font-mono text-yellow-500 font-semibold">{f.finishText}</span>
+                              {f.teamAtRank && (
+                                <span className={`text-sm font-semibold ${f.isUs ? 'text-yellow-300' : 'text-zinc-300'}`}>
+                                  {f.isUs ? '★ ' : ''}{f.teamAtRank}
+                                </span>
                               )}
                             </div>
-                          )}
-                          {f.opponentResolved && (
-                            <div className="mt-2 text-sm">
-                              <span className="text-zinc-500 text-xs block">Opponent</span>
-                              <span className="text-zinc-300">{f.opponentResolved}</span>
-                              <div className="text-zinc-600 text-xs mt-0.5">{f.opponentPoolLabel}</div>
-                            </div>
-                          )}
-                          <div className="mt-2 flex flex-wrap gap-4 text-sm">
-                            <div>
-                              <span className="text-zinc-500 text-xs block">Match</span>
-                              <span className="text-zinc-300">{f.court} @ {f.time}</span>
-                            </div>
-                            {f.workCourt && (
-                              <div>
-                                <span className="text-zinc-500 text-xs block">Work after</span>
-                                <span className="text-zinc-300">{f.workCourt} @ {f.workTime}</span>
+
+                            {/* Bracket + time */}
+                            <div className="font-semibold text-white">{f.nextPlayShort}</div>
+                            {(f.court || f.time) && (
+                              <div className="text-zinc-500 text-xs">{[f.court, f.time].filter(Boolean).join(' @ ')}</div>
+                            )}
+
+                            {/* Opponent */}
+                            {f.opponentResolved && (
+                              <div className="mt-1.5 text-sm">
+                                <span className="text-zinc-500 text-xs">vs </span>
+                                <span className="text-zinc-200">{f.opponentResolved}</span>
                               </div>
                             )}
+
+                            {/* Scores if played */}
+                            {f.hasScores && f.sets && f.sets.length > 0 && (
+                              <div className="flex gap-2 mt-1.5">
+                                {f.sets.filter(s => s.us !== null && s.them !== null).map((s, si) => {
+                                  const weWonSet = (s.us ?? 0) > (s.them ?? 0);
+                                  return (
+                                    <span key={si} className={`text-sm font-mono px-2 py-0.5 rounded ${weWonSet ? 'bg-emerald-900 text-emerald-300' : 'bg-red-900 text-red-300'}`}>
+                                      {s.us}-{s.them}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {/* Sunday destination */}
+                            {f.finishRange && (
+                              <div className={`mt-2 bg-zinc-800 rounded-lg px-3 py-2 text-xs ${f.saturdayEvening ? 'space-y-0.5' : ''}`}>
+                                {f.saturdayEvening ? f.finishRange.split('\n').map((line, li) => (
+                                  <div key={li} className={li === 0 ? 'text-emerald-400' : 'text-zinc-400'}>{line}</div>
+                                )) : (
+                                  <div className="text-zinc-400">{f.finishRange}</div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Work */}
+                            {f.workCourt && f.workTime && (
+                              <div className="mt-1.5 text-xs text-zinc-600">Work: {f.workCourt} @ {f.workTime}</div>
+                            )}
                           </div>
-                          {!f.saturdayEvening && f.note && (
-                            <div className="mt-2 text-xs text-zinc-600 italic">{f.note}</div>
+
+                          {/* Result badge */}
+                          {f.isUs && (
+                            <div className={`text-xs font-bold px-2 py-1 rounded shrink-0 ${
+                              isDone
+                                ? f.weWon ? 'bg-emerald-900 text-emerald-300' : 'bg-red-900 text-red-300'
+                                : f.saturdayEvening ? 'bg-zinc-700 text-zinc-300' : 'bg-zinc-800 text-zinc-500'
+                            }`}>
+                              {isDone ? (f.weWon ? 'WIN' : 'LOSS') : f.saturdayEvening ? 'Tonight' : 'Sunday'}
+                            </div>
                           )}
                         </div>
-                        <div className={`text-xs px-2 py-1 rounded shrink-0 font-semibold ${f.saturdayEvening ? 'bg-zinc-700 text-zinc-300' : 'bg-zinc-800 text-zinc-500'}`}>
-                          {f.saturdayEvening ? 'Sat Eve' : 'Sun Only'}
-                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}

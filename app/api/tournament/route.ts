@@ -380,39 +380,34 @@ export async function GET(req: Request) {
         const brktName = ourPoolChBrkts[poolRank];
         const brktShortName = brktName?.replace('Challenge Bracket #', 'ChBrkt#') || '';
 
-        // Opponent: find the other pool/rank that feeds this bracket
-        const brktPools = bracketOpponentPoolMap[brktName] || {};
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const opponentEntry = Object.entries(brktPools).find(([r, p]: [string, any]) =>
-          Number(r) !== poolRank && (p as any).FullName !== ourPool.FullName
-        );
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const opponentPool: any = opponentEntry?.[1];
-        const opponentWantRank = opponentEntry ? Number(opponentEntry[0]) : 1;
-        const opponentPoolTeams = opponentPool?.Teams || [];
+        // Get real match details from Saturday bracket data
+        const brktPlay = satBrackets.find((b: { FullName: string }) => b.FullName === brktName);
+        const brktMatch = brktPlay?.Roots?.[0]?.Match;
+        const iFirst = brktMatch?.FirstTeam?.Code?.toLowerCase() === teamCode.toLowerCase()
+          || brktMatch?.SecondTeam?.Code?.toLowerCase() !== teamCode.toLowerCase();
 
-        // Check if the real opponent is now known from current bracket match
-        let opponentResolved = resolveOpponent(opponentPoolTeams, opponentWantRank);
-        let opponentPoolLabel = opponentPool
-          ? `${opponentPool.FullName} (${opponentPool.Courts?.[0]?.Name || ''}): ${opponentPoolTeams.map((t: { TeamName: string }) => t.TeamName).join(' · ')}`
-          : 'Opponent TBD';
+        // Real opponent from bracket match data
+        let opponentResolved = '';
+        let opponentPoolLabel = '';
 
-        // If this IS our current bracket (i.e. we are in it), use the real match data
-        if (current && isUs) {
-          for (const block of current) {
-            if (block.Play?.ShortName === brktShortName || block.Play?.FullName === brktName) {
-              for (const m of (block.Matches || [])) {
-                const iFirst = m.FirstTeamId === Number(TEAM_ID);
-                const realOpp = iFirst ? m.SecondTeamName : m.FirstTeamName;
-                const realOppCode = iFirst ? m.SecondTeamCode : m.FirstTeamCode;
-                opponentResolved = `${realOpp}${realOppCode ? ` (${realOppCode})` : ''} — confirmed`;
-                opponentPoolLabel = '';
-              }
-            }
-          }
+        // Use actual team data from bracket if available
+        if (brktMatch?.FirstTeam && brktMatch?.SecondTeam) {
+          const teamIsFirst = brktMatch.FirstTeam.Code?.toLowerCase() === teamAtRank?.TeamCode?.toLowerCase();
+          const oppTeam = teamIsFirst ? brktMatch.SecondTeam : brktMatch.FirstTeam;
+          opponentResolved = `${oppTeam.Name} (${oppTeam.Code})`;
         }
 
-        // Sunday destinations
+        // Also get scores/result if bracket match has been played
+        const brktHasScores = brktMatch?.HasScores || false;
+        const brktFirstWon = brktMatch?.FirstTeamWon || false;
+        const brktSecondWon = brktMatch?.SecondTeamWon || false;
+        const teamIsFirst = brktMatch?.FirstTeam?.Code?.toLowerCase() === teamAtRank?.TeamCode?.toLowerCase();
+        const weWon = brktHasScores ? (teamIsFirst ? brktFirstWon : brktSecondWon) : null;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const brktSets = (brktMatch?.Sets || []).map((s: any) => ({
+          us: teamIsFirst ? s.FirstTeamScore : s.SecondTeamScore,
+          them: teamIsFirst ? s.SecondTeamScore : s.FirstTeamScore,
+        }));
         const winnerSunday = findSundayForChBrkt(brktShortName, 'Winner');
         const loserSunday = findSundayForChBrkt(brktShortName, 'Loser');
         const finishRange = [
@@ -468,13 +463,39 @@ export async function GET(req: Request) {
           opponentResolved,
           opponentPoolLabel,
           finishRange,
+          hasScores: brktHasScores,
+          weWon,
+          sets: brktSets,
         });
 
       } else {
         // 3rd/4th — no Saturday evening match, straight to Sunday
-        // Find their Sunday bracket by their team text (AES uses "<TeamName> (LS)" format)
+        // Find their Sunday bracket by their team text
         const teamText = teamAtRank ? `${teamAtRank.TeamName} (LS)` : '';
         const sundayInfo = teamText ? findSundayForTeamText(teamText) : null;
+
+        // Find their first match opponent from Sunday bracket source data
+        let sundayOpponent = '';
+        if (teamText) {
+          for (const b of day2) {
+            if (!b || typeof b !== 'object') continue;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const findOppInNode = (node: any): string => {
+              if (!node) return '';
+              const m = node.Match || {};
+              const t1: string = m.FirstTeamText || '';
+              const t2: string = m.SecondTeamText || '';
+              if (t1 === teamText && t2) return t2.replace(' (LS)', '');
+              if (t2 === teamText && t1) return t1.replace(' (LS)', '');
+              return findOppInNode(node.TopSource) || findOppInNode(node.BottomSource);
+            };
+            for (const r of (b.Roots || [])) {
+              const opp = findOppInNode(r.TopSource) || findOppInNode(r.BottomSource);
+              if (opp) { sundayOpponent = opp; break; }
+            }
+            if (sundayOpponent) break;
+          }
+        }
 
         futurePaths.push({
           finishText,
@@ -490,6 +511,10 @@ export async function GET(req: Request) {
           saturdayEvening: false,
           note: 'No Saturday evening match — straight to Sunday bracket',
           finishRange: sundayInfo ? `4 teams · ${sundayInfo.bracketName}` : '4 teams',
+          opponentResolved: sundayOpponent || '',
+          hasScores: false,
+          weWon: null,
+          sets: [],
         });
       }
     }
