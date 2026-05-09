@@ -107,9 +107,37 @@ export async function GET(req: Request) {
       aes(`/api/event/${EVENT}/division/${DIV}/team/${TEAM_ID}/schedule/past`),
     ]);
 
-    // --- Pool standings ---
+    // --- Pool standings with tiebreaker explanation ---
+    // Compute tiebreaker reason for any teams tied on match record
+    // AES tiebreaker order: 1) Match %, 2) Set %, 3) Point ratio
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const poolStandings = (ourPool.Teams || []).map((t: any) => ({
+    const rawTeams: any[] = ourPool.Teams || [];
+
+    // Group by match record to find who was tied
+    const matchRecordGroups: Record<string, typeof rawTeams> = {};
+    for (const t of rawTeams) {
+      const key = `${t.MatchesWon}-${t.MatchesLost}`;
+      if (!matchRecordGroups[key]) matchRecordGroups[key] = [];
+      matchRecordGroups[key].push(t);
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tiebreakers: Record<string, string> = {};
+    for (const [record, group] of Object.entries(matchRecordGroups)) {
+      if (group.length < 2) continue;
+      // Check what broke the tie
+      const setPercs = group.map((t: { TeamCode: string; SetPercent: number }) => t.SetPercent);
+      const allSameSetPerc = setPercs.every((v: number) => v === setPercs[0]);
+      for (const t of group) {
+        if (!allSameSetPerc) {
+          tiebreakers[t.TeamCode] = `Tied ${record} on matches, advanced by set % (${(t.SetPercent * 100).toFixed(1)}%)`;
+        } else {
+          tiebreakers[t.TeamCode] = `Tied ${record} on matches + sets, advanced by point ratio (${t.PointRatio.toFixed(3)})`;
+        }
+      }
+    }
+
+    const poolStandings = rawTeams.map((t: { TeamCode: string; TeamName: string; MatchesWon: number; MatchesLost: number; SetsWon: number; SetsLost: number; SetPercent: number; PointRatio: number; MatchPercent: string; FinishRank: number | null; OverallRank: number | null; FinishRankText: string }) => ({
       teamName: t.TeamName,
       teamCode: t.TeamCode,
       isUs: t.TeamCode?.toLowerCase() === teamCode.toLowerCase(),
@@ -118,8 +146,12 @@ export async function GET(req: Request) {
       setsWon: t.SetsWon,
       setsLost: t.SetsLost,
       matchPct: t.MatchPercent,
+      setPercent: t.SetPercent,
+      pointRatio: t.PointRatio,
       finishRank: t.FinishRank,
       overallRank: t.OverallRank,
+      finishRankText: t.FinishRankText,
+      tiebreaker: tiebreakers[t.TeamCode] || null,
     }));
 
     // --- Pool play matches: combine past (completed) + current pool play (upcoming) ---

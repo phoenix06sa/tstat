@@ -6,7 +6,7 @@ interface SetScore { us: number | null; them: number | null }
 interface PoolMatch {
   matchName: string; time: string; date: string; court: string;
   opponent: string; opponentCode: string; workTeam: string;
-  hasScores: boolean; sets: SetScore[]; weWon: boolean | null;
+  hasScores: boolean; sets: SetScore[]; weWon: boolean | null; isPoolPlay: boolean;
 }
 interface WorkAssignment { play: string; time: string; date: string; court: string }
 interface FuturePath {
@@ -30,6 +30,7 @@ interface Standing {
   matchesWon: number; matchesLost: number;
   setsWon: number; setsLost: number;
   matchPct: string; finishRank: number | null; overallRank: number | null;
+  finishRankText: string; tiebreaker: string | null;
 }
 interface TournamentData {
   team: string; teamCode: string; teamId: string; event: string;
@@ -219,12 +220,19 @@ export default function Home() {
                             {s.isUs ? '★ ' : ''}{s.teamName}
                           </div>
                           <div className="text-zinc-600 text-xs">{s.teamCode}</div>
+                          {s.tiebreaker && s.finishRank !== null && (
+                            <div className={`text-xs mt-0.5 ${s.isUs ? 'text-yellow-600' : 'text-zinc-600'}`}>
+                              ↑ {s.tiebreaker}
+                            </div>
+                          )}
                         </td>
                         <td className="text-center px-2 py-3 text-zinc-300">{s.matchesWon}-{s.matchesLost}</td>
                         <td className="text-center px-2 py-3 text-zinc-300">{s.setsWon}-{s.setsLost}</td>
                         <td className="text-center px-2 py-3">
                           {s.finishRank ? (
-                            <span className="bg-zinc-700 text-zinc-200 rounded px-2 py-0.5 text-xs font-bold">#{s.finishRank}</span>
+                            <span className={`rounded px-2 py-0.5 text-xs font-bold ${s.isUs ? 'bg-yellow-800 text-yellow-200' : 'bg-zinc-700 text-zinc-200'}`}>
+                              {s.finishRankText || `#${s.finishRank}`}
+                            </span>
                           ) : <span className="text-zinc-600 text-xs">—</span>}
                         </td>
                       </tr>
@@ -234,11 +242,16 @@ export default function Home() {
               </div>
             )}
 
-            {/* Pool matches */}
+            {/* Pool matches + bracket matches */}
             <div>
-              <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Pool Matches</div>
+              {data.poolMatches.some(m => !m.isPoolPlay) && (
+                <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Pool Matches</div>
+              )}
+              {!data.poolMatches.some(m => !m.isPoolPlay) && (
+                <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Pool Matches</div>
+              )}
               <div className="space-y-3">
-                {data.poolMatches.map((m, i) => (
+                {data.poolMatches.filter(m => m.isPoolPlay).map((m, i) => (
                   <div key={i} className={`bg-zinc-900 rounded-xl border p-4 ${
                     m.weWon === true ? 'border-emerald-800' :
                     m.weWon === false ? 'border-red-900' : 'border-zinc-800'
@@ -266,7 +279,41 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Work assignments */}
+            {/* Bracket matches */}
+            {data.poolMatches.some(m => !m.isPoolPlay) && (
+              <div>
+                <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Bracket Matches</div>
+                <div className="space-y-3">
+                  {data.poolMatches.filter(m => !m.isPoolPlay).map((m, i) => (
+                    <div key={i} className={`bg-zinc-900 rounded-xl border p-4 ${
+                      m.weWon === true ? 'border-emerald-800' :
+                      m.weWon === false ? 'border-red-900' : 'border-blue-800'
+                    }`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <span className="text-xs text-blue-400 font-semibold">BRACKET</span>
+                            <span className="text-xs text-zinc-500 font-mono">{m.matchName}</span>
+                            <span className="text-xs text-zinc-600">{m.date} {m.time}</span>
+                            <span className="text-xs text-zinc-600">{m.court}</span>
+                          </div>
+                          <div className="font-semibold text-white text-base">vs {m.opponent}</div>
+                          <div className="text-zinc-600 text-xs mb-2">{m.opponentCode}</div>
+                          <SetScores sets={m.sets} hasScores={m.hasScores} />
+                        </div>
+                        {m.weWon !== null ? (
+                          <div className={`text-xs font-bold px-2 py-1 rounded shrink-0 ${m.weWon ? 'bg-emerald-900 text-emerald-300' : 'bg-red-900 text-red-300'}`}>
+                            {m.weWon ? 'WIN' : 'LOSS'}
+                          </div>
+                        ) : (
+                          <div className="text-xs font-bold px-2 py-1 rounded shrink-0 bg-blue-900 text-blue-300">LIVE</div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {data.workAssignments.length > 0 && (
               <div>
                 <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Work / Ref Assignments</div>
