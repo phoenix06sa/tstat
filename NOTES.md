@@ -329,6 +329,59 @@ Eventually integrate this into the main Austin Select Volleyball site (`austin-s
 
 ---
 
+## Past Tournament Results Page
+
+We built a second page at `/previous` that shows results from the prior week's tournament (Salt Lake City Showdown, May 1-3, 2026) in the same visual style as the live tracker. This taught us several important things.
+
+### How past tournaments work on the AES API
+
+**What still works on past/completed tournaments:**
+- `/schedule/past` returns ALL completed matches with full scores, WIN/LOSS, set scores — this is the primary data source and works perfectly regardless of how old the tournament is
+- `/plays/{date}` returns pool standings with `FinishRank`, `MatchesWon`, etc. — fully populated once complete
+- Saturday bracket `Roots` still have real team names and match results
+
+**What does NOT work on past tournaments:**
+- `/schedule/current` — empty, no current match
+- `/schedule/future` — empty, no future matches
+- Day 3 (final day) `Teams` arrays in bracket plays are empty — AES clears them after the event. Can't determine exact final rank from bracket data alone.
+- Work/ref assignments are also gone
+
+**Workaround for final placement:** Derive it from the last entry in `/schedule/past`. The final match's `Play.FullName` tells you which bracket they played in (e.g. "Gold Bracket"). Exact rank within the bracket is not recoverable without cross-referencing all bracket match results — we didn't build that, we just show "Top 16 in Gold Bracket".
+
+### Salt Lake City Showdown — Different Structure From Lone Star
+
+This was a **3-day, 62-team** tournament with a very different format:
+
+- **Day 1 (Thu May 1):** 3-team pools (only 2 matches each) + "Cross Bracket" play evening
+- **Day 2 (Fri May 2):** Re-pooling — teams re-seeded into NEW 4-team pools based on Day 1 results
+- **Day 3 (Sat May 3):** Final brackets — Gold, Silver A/B, Bronze A/B, Flight 1A/B, Flight 2A/B, Flight 3A/B, Flight 4
+
+Key differences from Lone Star (2-day, 64-team):
+- 3 days instead of 2
+- "Cross Bracket" on Day 1 evening (not "Challenge Bracket")
+- Re-pooling on Day 2 — teams play in a completely new pool based on Day 1 finish
+- Different bracket tier names on Day 3 (Flight 2, 3, 4 instead of just Flight 1A-D)
+- 3-team pools on Day 1 means only 2 pool matches (not 3)
+
+**Our result:** 5W–2L overall. Pool 15 Day 1 → 1st. Cross Bracket win. Pool 1 Day 2 → 2nd. Gold Bracket Day 3 → loss first round. Finished top-16 out of 62.
+
+### What This Confirms About API Generalizability
+
+`/schedule/past` is rock solid — returned clean data for all 7 matches across 3 days without any special handling. This is the most reliable endpoint and will work on any AES tournament past or present.
+
+The bracket structure (tier names, number of days, re-pooling format) varies significantly between tournaments. Do not assume next year's tournament matches either of these two. Always pull `/plays/{date}` first and inspect the bracket names and structure before building any logic.
+
+### New Files Added
+
+```
+app/api/previous/route.ts   — fetches Salt Lake City Showdown data, returns structured JSON
+app/previous/page.tsx       — renders the results page (same dark UI, no auto-refresh)
+```
+
+The `/previous` page is linked from the main page footer. Static (no auto-refresh needed, tournament is complete). Cached at 1-hour revalidation since the data never changes.
+
+---
+
 ## 2026 Lone Star Regionals — Our Results
 
 Team: Austin Skyline 14 Black (g14askyl2ls)  
