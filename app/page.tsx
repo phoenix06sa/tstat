@@ -13,7 +13,9 @@ interface FuturePath {
   finishText: string; rank: number;
   nextPlay: string; nextPlayShort: string;
   court: string; time: string;
-  workCourt: string; workTime: string;
+  workCourt: string | null; workTime: string | null;
+  saturdayEvening: boolean;
+  note?: string;
 }
 interface Standing {
   teamName: string; teamCode: string; isUs: boolean;
@@ -244,18 +246,37 @@ export default function Home() {
                 </div>
                 <div className="space-y-3">
                   {data.futurePaths.map((f, i) => (
-                    <div key={i} className="bg-zinc-900 rounded-xl border border-zinc-800 p-4">
-                      <div className="text-xs text-zinc-500 mb-1">If they finish <span className="text-yellow-400 font-semibold">{f.finishText}</span></div>
-                      <div className="font-semibold text-white">{f.nextPlayShort}</div>
-                      <div className="text-zinc-400 text-sm">{f.nextPlay}</div>
-                      <div className="mt-2 flex gap-4 text-sm">
-                        <div>
-                          <span className="text-zinc-500 text-xs">Match</span>
-                          <div className="text-zinc-300">{f.court} @ {f.time}</div>
+                    <div key={i} className={`bg-zinc-900 rounded-xl border p-4 ${f.saturdayEvening ? 'border-zinc-800' : 'border-zinc-700'}`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1">
+                          <div className="text-xs text-zinc-500 mb-1">
+                            If they finish <span className="text-yellow-400 font-semibold">{f.finishText}</span>
+                          </div>
+                          <div className="font-semibold text-white">{f.nextPlayShort}</div>
+                          <div className="text-zinc-400 text-sm">{f.nextPlay}</div>
+                          {f.saturdayEvening ? (
+                            <div className="mt-2 flex flex-wrap gap-4 text-sm">
+                              <div>
+                                <span className="text-zinc-500 text-xs block">Match</span>
+                                <span className="text-zinc-300">{f.court} @ {f.time}</span>
+                              </div>
+                              {f.workCourt && (
+                                <div>
+                                  <span className="text-zinc-500 text-xs block">Work after</span>
+                                  <span className="text-zinc-300">{f.workCourt} @ {f.workTime}</span>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="mt-2 text-sm text-zinc-500 italic">{f.note}</div>
+                          )}
                         </div>
-                        <div>
-                          <span className="text-zinc-500 text-xs">Work after</span>
-                          <div className="text-zinc-300">{f.workCourt} @ {f.workTime}</div>
+                        <div className={`text-xs px-2 py-1 rounded shrink-0 font-semibold ${
+                          f.saturdayEvening
+                            ? 'bg-zinc-700 text-zinc-300'
+                            : 'bg-zinc-800 text-zinc-500'
+                        }`}>
+                          {f.saturdayEvening ? 'Sat Eve' : 'Sun Only'}
                         </div>
                       </div>
                     </div>

@@ -15,7 +15,8 @@ const AES_HEADERS = {
 };
 
 async function aes(path: string) {
-  const res = await fetch(`${BASE}${path}`, { headers: AES_HEADERS, next: { revalidate: 60 } });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const res = await fetch(`${BASE}${path}`, { headers: AES_HEADERS, next: { revalidate: 60 } } as any);
   if (!res.ok) return null;
   return res.json();
 }
@@ -81,6 +82,8 @@ export async function GET() {
     }
 
     // --- Future paths ---
+    // AES API only returns 1st and 2nd place paths (they play Sat evening challenge brackets).
+    // 3rd and 4th place skip Saturday evening and go directly to Sunday lower brackets.
     const futurePaths: object[] = [];
     if (future) {
       for (const f of future) {
@@ -93,9 +96,35 @@ export async function GET() {
           time: fmtTime(f.NextMatch?.ScheduledStartDateTime),
           workCourt: f.WorkMatch?.Court?.Name,
           workTime: fmtTime(f.WorkMatch?.ScheduledStartDateTime),
+          saturdayEvening: true,
         });
       }
     }
+    // Add 3rd and 4th place paths — no Saturday evening game, straight to Sunday
+    futurePaths.push({
+      finishText: '3rd-P5',
+      rank: 3,
+      nextPlay: 'Round 3 Group 1 Bronze Bracket (Sunday)',
+      nextPlayShort: 'Bronze Bracket',
+      court: 'TBD',
+      time: 'Sun Morning',
+      workCourt: null,
+      workTime: null,
+      saturdayEvening: false,
+      note: 'No Saturday evening match — seeded directly into Sunday Bronze bracket',
+    });
+    futurePaths.push({
+      finishText: '4th-P5',
+      rank: 4,
+      nextPlay: 'Round 3 Group 1 Flight Bracket (Sunday)',
+      nextPlayShort: 'Flight Bracket',
+      court: 'TBD',
+      time: 'Sun Morning',
+      workCourt: null,
+      workTime: null,
+      saturdayEvening: false,
+      note: 'No Saturday evening match — seeded directly into Sunday Flight bracket',
+    });
 
     // --- Pool standings (find our pool from day1) ---
     let poolStandings: object[] = [];
