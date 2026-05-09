@@ -254,21 +254,20 @@ export default function Home() {
                           </div>
                           <div className="font-semibold text-white">{f.nextPlayShort}</div>
                           <div className="text-zinc-400 text-sm">{f.nextPlay}</div>
-                          {f.saturdayEvening ? (
-                            <div className="mt-2 flex flex-wrap gap-4 text-sm">
-                              <div>
-                                <span className="text-zinc-500 text-xs block">Match</span>
-                                <span className="text-zinc-300">{f.court} @ {f.time}</span>
-                              </div>
-                              {f.workCourt && (
-                                <div>
-                                  <span className="text-zinc-500 text-xs block">Work after</span>
-                                  <span className="text-zinc-300">{f.workCourt} @ {f.workTime}</span>
-                                </div>
-                              )}
+                          <div className="mt-2 flex flex-wrap gap-4 text-sm">
+                            <div>
+                              <span className="text-zinc-500 text-xs block">Match</span>
+                              <span className="text-zinc-300">{f.court} @ {f.time}</span>
                             </div>
-                          ) : (
-                            <div className="mt-2 text-sm text-zinc-500 italic">{f.note}</div>
+                            {f.workCourt && (
+                              <div>
+                                <span className="text-zinc-500 text-xs block">Work after</span>
+                                <span className="text-zinc-300">{f.workCourt} @ {f.workTime}</span>
+                              </div>
+                            )}
+                          </div>
+                          {!f.saturdayEvening && f.note && (
+                            <div className="mt-2 text-xs text-zinc-600 italic">{f.note}</div>
                           )}
                         </div>
                         <div className={`text-xs px-2 py-1 rounded shrink-0 font-semibold ${
