@@ -290,7 +290,24 @@ export async function GET(req: Request) {
       return null;
     };
 
-    // --- Build future paths (all 4 pool finish scenarios) ---
+    // --- Build Sunday bracket finish range map ---
+    // 64 teams total. Brackets in order: Gold(16), Silver A-D(4 each=16), Bronze A-D(4 each=16), Flight 1A-1D(4 each=16)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sundayFinishRanges: Record<string, { best: string; worst: string; note: string }> = {
+      'Gold Bracket':     { best: '1st',  worst: '16th', note: '16 teams — all Saturday bracket winners' },
+      'Silver A Bracket': { best: '17th', worst: '20th', note: '4 teams — Saturday bracket losers (group A)' },
+      'Silver B Bracket': { best: '17th', worst: '20th', note: '4 teams — Saturday bracket losers (group B)' },
+      'Silver C Bracket': { best: '17th', worst: '20th', note: '4 teams — Saturday bracket losers (group C)' },
+      'Silver D Bracket': { best: '17th', worst: '20th', note: '4 teams — Saturday bracket losers (group D)' },
+      'Bronze A Bracket': { best: '33rd', worst: '36th', note: '4 teams — 3rd place pool finishers (group A)' },
+      'Bronze B Bracket': { best: '33rd', worst: '36th', note: '4 teams — 3rd place pool finishers (group B)' },
+      'Bronze C Bracket': { best: '33rd', worst: '36th', note: '4 teams — 3rd place pool finishers (group C)' },
+      'Bronze D Bracket': { best: '33rd', worst: '36th', note: '4 teams — 3rd place pool finishers (group D)' },
+      'Flight 1A Bracket': { best: '49th', worst: '52nd', note: '4 teams — 4th place pool finishers (group A)' },
+      'Flight 1B Bracket': { best: '49th', worst: '52nd', note: '4 teams — 4th place pool finishers (group B)' },
+      'Flight 1C Bracket': { best: '49th', worst: '52nd', note: '4 teams — 4th place pool finishers (group C)' },
+      'Flight 1D Bracket': { best: '49th', worst: '52nd', note: '4 teams — 4th place pool finishers (group D)' },
+    };
     // We always show all 4 paths based on pool finish, regardless of which play we're in now.
     // 1st/2nd go to Saturday evening challenge brackets -> then Sunday Gold/Silver
     // 3rd/4th skip Saturday evening -> directly to Sunday Bronze/Flight
@@ -408,11 +425,18 @@ export async function GET(req: Request) {
           us: teamIsFirst ? s.FirstTeamScore : s.SecondTeamScore,
           them: teamIsFirst ? s.SecondTeamScore : s.FirstTeamScore,
         }));
+        // Sunday destinations with finish ranges
         const winnerSunday = findSundayForChBrkt(brktShortName, 'Winner');
         const loserSunday = findSundayForChBrkt(brktShortName, 'Loser');
+        const winRange = winnerSunday ? sundayFinishRanges[winnerSunday.bracketName] : null;
+        const loseRange = loserSunday ? sundayFinishRanges[loserSunday.bracketName] : null;
         const finishRange = [
-          winnerSunday ? `Win -> ${winnerSunday.bracketName}` : 'Win -> TBD',
-          loserSunday ? `Lose -> ${loserSunday.bracketName}` : 'Lose -> TBD',
+          winnerSunday
+            ? `Win -> ${winnerSunday.bracketName} · best ${winRange?.best ?? '?'}, worst ${winRange?.worst ?? '?'} of 64`
+            : 'Win -> TBD',
+          loserSunday
+            ? `Lose -> ${loserSunday.bracketName} · best ${loseRange?.best ?? '?'}, worst ${loseRange?.worst ?? '?'} of 64`
+            : 'Lose -> TBD',
         ].join('\n');
 
         // Get match time/court from current bracket match or future API
@@ -510,7 +534,14 @@ export async function GET(req: Request) {
           workTime: sundayInfo?.workTime || '',
           saturdayEvening: false,
           note: 'No Saturday evening match — straight to Sunday bracket',
-          finishRange: sundayInfo ? `4 teams · ${sundayInfo.bracketName}` : '4 teams',
+          finishRange: sundayInfo
+            ? (() => {
+                const r = sundayFinishRanges[sundayInfo.bracketName];
+                return r
+                  ? `${sundayInfo.bracketName} · best ${r.best}, worst ${r.worst} of 64`
+                  : `4 teams · ${sundayInfo.bracketName}`;
+              })()
+            : '4 teams',
           opponentResolved: sundayOpponent || '',
           hasScores: false,
           weWon: null,
