@@ -84,9 +84,15 @@ export async function GET() {
     // --- Future paths ---
     // AES API only returns 1st and 2nd place paths (they play Sat evening challenge brackets).
     // 3rd and 4th place skip Saturday evening and go directly to Sunday lower brackets.
+    //
+    // Bracket opponent mapping (derived from cross-referencing all pool future paths):
+    // ChBrkt#5: Pool 5 1st vs Pool 6 2nd
+    // ChBrkt#6: Pool 5 2nd vs Pool 6 1st
+    // Pool 6 teams: Austin Skyline 14 Royal, HOU STELLAR 14 ELITE, Tx Alpha Premier 14 Adidas, United VBA 14 Black
     const futurePaths: object[] = [];
     if (future) {
       for (const f of future) {
+        const opponentSeed = f.PotentialRank === 1 ? '2nd from Pool 6' : '1st from Pool 6';
         futurePaths.push({
           finishText: f.PotentialRankText,
           rank: f.PotentialRank,
@@ -97,9 +103,12 @@ export async function GET() {
           workCourt: f.WorkMatch?.Court?.Name,
           workTime: fmtTime(f.WorkMatch?.ScheduledStartDateTime),
           saturdayEvening: true,
+          opponentSeed,
+          opponentPool: 'Pool 6 (GRB Ct 11): Austin Skyline 14 Royal · HOU STELLAR 14 ELITE · Tx Alpha Premier 14 Adidas · United VBA 14 Black',
         });
       }
     }
+
     // Add 3rd and 4th place paths — no Saturday evening game, straight to Sunday
     futurePaths.push({
       finishText: '3rd-P5',

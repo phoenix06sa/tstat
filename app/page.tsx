@@ -16,6 +16,8 @@ interface FuturePath {
   workCourt: string | null; workTime: string | null;
   saturdayEvening: boolean;
   note?: string;
+  opponentSeed?: string;
+  opponentPool?: string;
 }
 interface Standing {
   teamName: string; teamCode: string; isUs: boolean;
@@ -254,6 +256,13 @@ export default function Home() {
                           </div>
                           <div className="font-semibold text-white">{f.nextPlayShort}</div>
                           <div className="text-zinc-400 text-sm">{f.nextPlay}</div>
+                          {f.opponentSeed && (
+                            <div className="mt-1 text-sm">
+                              <span className="text-zinc-500 text-xs block">Opponent</span>
+                              <span className="text-zinc-300">{f.opponentSeed}</span>
+                              <div className="text-zinc-600 text-xs mt-0.5">{f.opponentPool}</div>
+                            </div>
+                          )}
                           <div className="mt-2 flex flex-wrap gap-4 text-sm">
                             <div>
                               <span className="text-zinc-500 text-xs block">Match</span>
