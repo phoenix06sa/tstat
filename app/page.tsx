@@ -18,6 +18,13 @@ interface FuturePath {
   note?: string;
   opponentSeed?: string;
   opponentPool?: string;
+  opponentResolved?: string;
+  opponentPoolLabel?: string;
+}
+interface SundayBracket {
+  name: string; shortName: string; courts: string[];
+  teams: { teamName: string; teamCode: string; isUs: boolean; finishRank: number | null }[];
+  hasTeams: boolean; weAreIn: boolean;
 }
 interface Standing {
   teamName: string; teamCode: string; isUs: boolean;
@@ -33,7 +40,7 @@ interface TournamentData {
   poolMatches: PoolMatch[];
   workAssignments: WorkAssignment[];
   futurePaths: FuturePath[];
-  sundayBrackets: string[];
+  sundayBrackets: SundayBracket[];
 }
 
 function timeAgo(iso: string) {
@@ -90,8 +97,6 @@ export default function Home() {
     const interval = setInterval(fetchData, 90_000);
     return () => clearInterval(interval);
   }, [fetchData]);
-
-  const hasAnyScores = data?.poolMatches.some(m => m.hasScores);
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans">
@@ -256,11 +261,11 @@ export default function Home() {
                           </div>
                           <div className="font-semibold text-white">{f.nextPlayShort}</div>
                           <div className="text-zinc-400 text-sm">{f.nextPlay}</div>
-                          {f.opponentSeed && (
+                          {(f.opponentResolved || f.opponentSeed) && (
                             <div className="mt-1 text-sm">
                               <span className="text-zinc-500 text-xs block">Opponent</span>
-                              <span className="text-zinc-300">{f.opponentSeed}</span>
-                              <div className="text-zinc-600 text-xs mt-0.5">{f.opponentPool}</div>
+                              <span className="text-zinc-300">{f.opponentResolved || f.opponentSeed}</span>
+                              <div className="text-zinc-600 text-xs mt-0.5">{f.opponentPoolLabel || f.opponentPool}</div>
                             </div>
                           )}
                           <div className="mt-2 flex flex-wrap gap-4 text-sm">
@@ -294,26 +299,79 @@ export default function Home() {
             )}
 
             {/* Sunday info */}
-            <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-4">
-              <div className="text-xs text-zinc-500 uppercase tracking-widest mb-2">Sunday May 10 — Final Brackets</div>
-              {hasAnyScores ? (
-                <div className="text-zinc-300 text-sm">
-                  Sunday bracket assignments will appear here once Saturday results are finalized.
-                </div>
-              ) : (
-                <div className="text-zinc-400 text-sm">
-                  Sunday placement depends on Saturday pool finish and evening bracket results.
-                  Available brackets include Gold, Silver A-D, Bronze A-D, and Flight 1A-1D.
-                  The Gold bracket is the top flight (best 8 teams out of 64).
-                </div>
-              )}
-              {data.sundayBrackets.length > 0 && (
-                <div className="mt-3 space-y-1">
-                  {data.sundayBrackets.map((b, i) => (
-                    <div key={i} className="text-xs text-zinc-600 font-mono">{b}</div>
-                  ))}
-                </div>
-              )}
+            <div>
+              <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">
+                Sunday May 10 — Final Brackets
+              </div>
+              {(() => {
+                const ourBracket = data.sundayBrackets.find(b => b.weAreIn);
+                const populatedBrackets = data.sundayBrackets.filter(b => b.hasTeams);
+                if (ourBracket) {
+                  // We know our Sunday bracket - show it prominently
+                  return (
+                    <div className="space-y-3">
+                      <div className="bg-zinc-900 rounded-xl border border-yellow-700 p-4">
+                        <div className="text-xs text-yellow-500 uppercase tracking-widest mb-1">Our Bracket</div>
+                        <div className="font-bold text-white text-lg">{ourBracket.shortName}</div>
+                        <div className="text-zinc-400 text-sm mb-2">{ourBracket.name}</div>
+                        <div className="text-zinc-500 text-xs mb-2">Courts: {ourBracket.courts.join(', ')}</div>
+                        <div className="space-y-1">
+                          {ourBracket.teams.map((t, i) => (
+                            <div key={i} className={`text-sm px-2 py-1 rounded ${t.isUs ? 'bg-yellow-950 text-yellow-300 font-semibold' : 'text-zinc-400'}`}>
+                              {t.isUs ? '★ ' : ''}{t.teamName}
+                              {t.finishRank && <span className="text-zinc-500 text-xs ml-1">(seeded #{t.finishRank})</span>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      {populatedBrackets.filter(b => !b.weAreIn).map((b, i) => (
+                        <div key={i} className="bg-zinc-900 rounded-xl border border-zinc-800 p-3">
+                          <div className="font-medium text-zinc-300 text-sm">{b.shortName}</div>
+                          <div className="text-zinc-600 text-xs">{b.courts.join(', ')}</div>
+                          <div className="mt-1 space-y-0.5">
+                            {b.teams.map((t, j) => (
+                              <div key={j} className="text-zinc-500 text-xs">{t.teamName}</div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                }
+                if (populatedBrackets.length > 0) {
+                  return (
+                    <div className="space-y-2">
+                      <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-4 text-zinc-400 text-sm">
+                        Sunday brackets are being seeded. Our placement depends on Saturday evening results.
+                      </div>
+                      {populatedBrackets.map((b, i) => (
+                        <div key={i} className="bg-zinc-900 rounded-xl border border-zinc-800 p-3">
+                          <div className="font-medium text-zinc-300 text-sm">{b.shortName}</div>
+                          <div className="text-zinc-600 text-xs">{b.courts.join(', ')}</div>
+                          <div className="mt-1 space-y-0.5">
+                            {b.teams.map((t, j) => (
+                              <div key={j} className="text-zinc-500 text-xs">{t.teamName}</div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                }
+                return (
+                  <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-4">
+                    <div className="text-zinc-400 text-sm">
+                      Sunday placement depends on Saturday pool finish and evening bracket results.
+                      Available brackets range from Gold (top 8 of 64) down through Silver, Bronze, and Flight.
+                    </div>
+                    <div className="mt-3 space-y-1">
+                      {data.sundayBrackets.map((b, i) => (
+                        <div key={i} className="text-xs text-zinc-600 font-mono">{b.name}</div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Footer */}
