@@ -3,14 +3,6 @@ import { NextResponse } from 'next/server';
 const BASE = 'https://results.advancedeventsystems.com';
 const EVENT = 'PTAwMDAwNDEyNDA90';
 const DIV = '195174';
-const TEAM_ID = '84723';
-const TEAM_CODE = 'g14askyl2ls';
-const TEAM_NAME = 'Austin Skyline 14 Black';
-
-// Pool 6 is the opponent pool for our Saturday evening brackets
-// ChBrkt#5: Pool 5 1st vs Pool 6 2nd
-// ChBrkt#6: Pool 5 2nd vs Pool 6 1st
-const OPPONENT_POOL_NAME = 'Pool 6';
 
 const AES_HEADERS = {
   'accept': 'application/json, text/plain, */*',
@@ -36,35 +28,98 @@ function fmtTime(iso: string) {
   return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
+function fmtDate(iso: string) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function resolveOpponent(pool6Teams: any[], wantRank: number): string {
-  // wantRank: 1 = 1st place, 2 = 2nd place from Pool 6
-  const sorted = [...pool6Teams].sort((a, b) => {
-    // If finishRank is set, use it
+function extractAllSources(play: any): Set<string> {
+  const sources = new Set<string>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function walk(node: any) {
+    if (!node) return;
+    const m = node.Match || {};
+    if (m.FirstTeamText) sources.add(m.FirstTeamText);
+    if (m.SecondTeamText) sources.add(m.SecondTeamText);
+    walk(node.TopSource);
+    walk(node.BottomSource);
+  }
+  for (const r of (play.Roots || [])) { walk(r); walk(r.TopSource); walk(r.BottomSource); }
+  return sources;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function resolveOpponent(opponentPoolTeams: any[], wantRank: number): string {
+  const sorted = [...opponentPoolTeams].sort((a, b) => {
     if (a.FinishRank !== null && b.FinishRank !== null) return a.FinishRank - b.FinishRank;
     if (a.FinishRank !== null) return -1;
     if (b.FinishRank !== null) return 1;
-    // Fall back to match wins
-    if (a.MatchesWon !== b.MatchesWon) return b.MatchesWon - a.MatchesWon;
-    return 0;
+    return b.MatchesWon - a.MatchesWon;
   });
   const team = sorted[wantRank - 1];
-  if (!team) return `${wantRank === 1 ? '1st' : '2nd'} from Pool 6`;
+  if (!team) return `${wantRank === 1 ? '1st' : '2nd'} place (TBD)`;
   const isResolved = team.FinishRank !== null || team.MatchesWon > 0;
-  if (!isResolved) return `${wantRank === 1 ? '1st' : '2nd'} from Pool 6 (TBD)`;
-  const label = team.FinishRank !== null ? `(confirmed ${wantRank === 1 ? '1st' : '2nd'})` : `(leading ${wantRank === 1 ? '1st' : '2nd'})`;
-  return `${team.TeamName} ${label}`;
+  if (!isResolved) return `${wantRank === 1 ? '1st' : '2nd'} place from opponent pool (TBD)`;
+  const label = team.FinishRank !== null ? `confirmed ${wantRank === 1 ? '1st' : '2nd'}` : `leading ${wantRank === 1 ? '1st' : '2nd'}`;
+  return `${team.TeamName} (${label})`;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const teamCode = searchParams.get('team') || 'g14askyl2ls';
+
   try {
-    const [current, work, future, day1, day2] = await Promise.all([
-      aes(`/api/event/${EVENT}/division/${DIV}/team/${TEAM_ID}/schedule/current`),
-      aes(`/api/event/${EVENT}/division/${DIV}/team/${TEAM_ID}/schedule/work`),
-      aes(`/api/event/${EVENT}/division/${DIV}/team/${TEAM_ID}/schedule/future`),
+    const [day1, day2] = await Promise.all([
       aes(`/api/event/${EVENT}/division/${DIV}/plays/2026-05-09`),
       aes(`/api/event/${EVENT}/division/${DIV}/plays/2026-05-10`),
     ]);
+
+    // --- Find the team's pool ---
+    const pools = day1.filter((p: { PlayType: number }) => p.PlayType === 0);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let ourPool: any = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let ourTeamInfo: any = null;
+
+    for (const pool of pools) {
+      const found = (pool.Teams || []).find((t: { TeamCode: string }) =>
+        t.TeamCode?.toLowerCase() === teamCode.toLowerCase()
+      );
+      if (found) { ourPool = pool; ourTeamInfo = found; break; }
+    }
+
+    if (!ourPool || !ourTeamInfo) {
+      return NextResponse.json({ error: `Team ${teamCode} not found in this division` }, { status: 404 });
+    }
+
+    const TEAM_ID = String(ourTeamInfo.TeamId);
+    const TEAM_NAME = ourTeamInfo.TeamName;
+    const poolShortName = ourPool.ShortName || ourPool.FullName; // e.g. "P5"
+    const poolNumber = ourPool.FullName.replace('Pool ', ''); // e.g. "5"
+
+    // --- Fetch team-specific schedule ---
+    const [current, work, future] = await Promise.all([
+      aes(`/api/event/${EVENT}/division/${DIV}/team/${TEAM_ID}/schedule/current`),
+      aes(`/api/event/${EVENT}/division/${DIV}/team/${TEAM_ID}/schedule/work`),
+      aes(`/api/event/${EVENT}/division/${DIV}/team/${TEAM_ID}/schedule/future`),
+    ]);
+
+    // --- Pool standings ---
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const poolStandings = (ourPool.Teams || []).map((t: any) => ({
+      teamName: t.TeamName,
+      teamCode: t.TeamCode,
+      isUs: t.TeamCode?.toLowerCase() === teamCode.toLowerCase(),
+      matchesWon: t.MatchesWon,
+      matchesLost: t.MatchesLost,
+      setsWon: t.SetsWon,
+      setsLost: t.SetsLost,
+      matchPct: t.MatchPercent,
+      finishRank: t.FinishRank,
+      overallRank: t.OverallRank,
+    }));
 
     // --- Pool play matches ---
     const poolMatches: object[] = [];
@@ -75,21 +130,22 @@ export async function GET() {
           const opponent = iFirst ? m.SecondTeamName : m.FirstTeamName;
           const opponentCode = iFirst ? m.SecondTeamCode : m.FirstTeamCode;
           const ourWon = iFirst ? m.FirstTeamWon : m.SecondTeamWon;
-          const sets: { us: number | null; them: number | null }[] = (m.Sets || []).map((s: { FirstTeamScore: number | null; SecondTeamScore: number | null }) => ({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const sets = (m.Sets || []).map((s: any) => ({
             us: iFirst ? s.FirstTeamScore : s.SecondTeamScore,
             them: iFirst ? s.SecondTeamScore : s.FirstTeamScore,
           }));
-          const hasScores = m.HasScores;
           poolMatches.push({
             matchName: m.MatchFullName,
             time: fmtTime(m.ScheduledStartDateTime),
+            date: fmtDate(m.ScheduledStartDateTime),
             court: m.Court?.Name,
             opponent,
             opponentCode,
             workTeam: m.WorkTeamText,
-            hasScores,
+            hasScores: m.HasScores,
             sets,
-            weWon: hasScores ? ourWon : null,
+            weWon: m.HasScores ? ourWon : null,
           });
         }
       }
@@ -102,117 +158,179 @@ export async function GET() {
         workAssignments.push({
           play: block.Play?.FullName,
           time: fmtTime(block.Match?.ScheduledStartDateTime),
+          date: fmtDate(block.Match?.ScheduledStartDateTime),
           court: block.Match?.Court?.Name,
         });
       }
     }
 
-    // --- Pool standings (our pool) + Pool 6 standings for opponent resolution ---
-    let poolStandings: object[] = [];
-    let poolName = '';
-    let poolCourt = '';
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let pool6Teams: any[] = [];
+    // --- Discover opponent pool and bracket paths from Saturday data ---
+    // future API gives 1st/2nd paths; extract bracket names and find opponent pools dynamically
+    const brackets_sat = day1.filter((p: { PlayType: number }) => p.PlayType === 1);
 
-    if (day1) {
-      for (const play of day1) {
-        const teams = play.Teams || [];
-        const found = teams.find((t: { TeamCode: string }) => t.TeamCode?.toLowerCase() === TEAM_CODE.toLowerCase());
-        if (found) {
-          poolName = play.CompleteFullName || play.FullName;
-          poolCourt = play.Courts?.[0]?.Name || '';
-          poolStandings = teams.map((t: { TeamCode: string; TeamName: string; MatchesWon: number; MatchesLost: number; SetsWon: number; SetsLost: number; MatchPercent: string; FinishRank: number | null; OverallRank: number | null }) => ({
-            teamName: t.TeamName,
-            teamCode: t.TeamCode,
-            isUs: t.TeamCode?.toLowerCase() === TEAM_CODE.toLowerCase(),
-            matchesWon: t.MatchesWon,
-            matchesLost: t.MatchesLost,
-            setsWon: t.SetsWon,
-            setsLost: t.SetsLost,
-            matchPct: t.MatchPercent,
-            finishRank: t.FinishRank,
-            overallRank: t.OverallRank,
-          }));
-        }
-        if (play.FullName === OPPONENT_POOL_NAME) {
-          pool6Teams = play.Teams || [];
-        }
+    // Build bracket-to-opponent-pool map
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const bracketOpponentPoolMap: Record<string, any> = {};
+    for (const pool of pools) {
+      const teams = pool.Teams || [];
+      if (!teams.length) continue;
+      const tid = teams[0].TeamId;
+      const pFuture = await aes(`/api/event/${EVENT}/division/${DIV}/team/${tid}/schedule/future`);
+      if (!pFuture) continue;
+      for (const f of pFuture) {
+        const brktName = f.NextPlay?.FullName;
+        const rank = f.PotentialRank;
+        if (!bracketOpponentPoolMap[brktName]) bracketOpponentPoolMap[brktName] = {};
+        bracketOpponentPoolMap[brktName][rank] = pool;
       }
     }
 
-    // --- Future paths ---
-    // AES API only returns 1st and 2nd place paths (Saturday evening challenge brackets).
-    // 3rd and 4th skip Saturday evening and go straight to Sunday lower brackets.
-    //
-    // Bracket seeding (cross-referenced from all pool future paths):
-    //   ChBrkt#5: Pool 5 1st vs Pool 6 2nd  (GRB Ct 6 @ 6:30 PM Sat)
-    //   ChBrkt#6: Pool 5 2nd vs Pool 6 1st  (GRB Ct 7 @ 6:30 PM Sat)
-    //   3rd -> Bronze B Bracket             (GRB Ct 6 @ 8:30 AM Sun)
-    //   4th -> Flight 1C Bracket            (GRB Ct 5 @ 9:30 AM Sun)
-    const pool6Label = pool6Teams.length > 0
-      ? pool6Teams.map((t: { TeamName: string }) => t.TeamName).join(' · ')
-      : 'Austin Skyline 14 Royal · HOU STELLAR 14 ELITE · Tx Alpha Premier 14 Adidas · United VBA 14 Black';
+    // --- Find 3rd/4th Sunday bracket info dynamically ---
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    function findSundayBracketForTag(tag: string): { bracketName: string; court: string; time: string; workCourt: string; workTime: string } | null {
+      for (const b of day2) {
+        if (!b || typeof b !== 'object') continue;
+        const sources = extractAllSources(b);
+        if (!sources.has(tag)) continue;
+        // Find the first sub-match that references this tag
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        function findMatchWithTag(node: any): any {
+          if (!node) return null;
+          const m = node.Match || {};
+          if (m.FirstTeamText === tag || m.SecondTeamText === tag) return m;
+          return findMatchWithTag(node.TopSource) || findMatchWithTag(node.BottomSource);
+        }
+        for (const r of (b.Roots || [])) {
+          const m = findMatchWithTag(r.TopSource) || findMatchWithTag(r.BottomSource);
+          if (m) {
+            // Work match is the one right after — find the root match for timing
+            const rootM = r.Match || {};
+            return {
+              bracketName: b.FullName,
+              court: m.Court?.Name || rootM.Court?.Name || '',
+              time: fmtTime(m.ScheduledStartDateTime || rootM.ScheduledStartDateTime),
+              workCourt: rootM.Court?.Name || '',
+              workTime: fmtTime(rootM.ScheduledStartDateTime),
+            };
+          }
+        }
+        return { bracketName: b.FullName, court: '', time: '', workCourt: '', workTime: '' };
+      }
+      return null;
+    }
 
+    // --- Discover Sunday bracket placement for winner/loser of our challenge brackets ---
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    function findSundayForChBrkt(brktShortName: string, outcome: 'Winner' | 'Loser'): { bracketName: string; teamCount: number } | null {
+      const tag = `${outcome} of ${brktShortName}M1`;
+      for (const b of day2) {
+        if (!b || typeof b !== 'object') continue;
+        const sources = extractAllSources(b);
+        if (sources.has(tag)) {
+          const teamCount = sources.size;
+          return { bracketName: b.FullName, teamCount };
+        }
+      }
+      return null;
+    }
+
+    // --- Build future paths ---
     const futurePaths: object[] = [];
+
     if (future) {
       for (const f of future) {
-        // 1st place faces Pool 6's 2nd; 2nd place faces Pool 6's 1st
-        const opponentWantRank = f.PotentialRank === 1 ? 2 : 1;
-        const opponentResolved = resolveOpponent(pool6Teams, opponentWantRank);
-        const finishRange = 'Win -> Gold bracket (16 teams, top finishes)\nLose -> Silver C/D bracket (4 teams, mid-tier)';
+        const brktName = f.NextPlay?.FullName; // e.g. "Challenge Bracket #5"
+        const brktShortName = f.NextPlay?.ShortName; // e.g. "ChBrkt#5"
+        const rank = f.PotentialRank; // 1 or 2
+
+        // Opponent pool: the OTHER pool that feeds into this bracket
+        const brktPools = bracketOpponentPoolMap[brktName] || {};
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const opponentPool: any = Object.entries(brktPools).find(([r, p]: [string, any]) =>
+          Number(r) !== rank && (p as any).FullName !== ourPool.FullName
+        )?.[1];
+        const opponentPoolTeams = opponentPool?.Teams || [];
+        const opponentWantRank = rank === 1
+          ? Object.keys(brktPools).find(r => Number(r) !== 1 && brktPools[r].FullName !== ourPool.FullName) ? 2 : 1
+          : 1;
+        const opponentResolved = resolveOpponent(opponentPoolTeams, opponentWantRank);
+        const opponentPoolLabel = opponentPool
+          ? `${opponentPool.FullName} (${opponentPool.Courts?.[0]?.Name || ''}): ${opponentPoolTeams.map((t: { TeamName: string }) => t.TeamName).join(' · ')}`
+          : 'Opponent pool TBD';
+
+        // Where does winner/loser go on Sunday?
+        const winnerSunday = findSundayForChBrkt(brktShortName, 'Winner');
+        const loserSunday = findSundayForChBrkt(brktShortName, 'Loser');
+
+        const finishRange = [
+          winnerSunday ? `Win -> ${winnerSunday.bracketName} (top bracket)` : 'Win -> TBD',
+          loserSunday ? `Lose -> ${loserSunday.bracketName} (mid-tier)` : 'Lose -> TBD',
+        ].join('\n');
+
         futurePaths.push({
           finishText: f.PotentialRankText,
-          rank: f.PotentialRank,
+          rank,
           nextPlay: f.NextPlay?.CompleteFullName,
-          nextPlayShort: f.NextPlay?.FullName,
+          nextPlayShort: brktName,
           court: f.NextMatch?.Court?.Name,
           time: fmtTime(f.NextMatch?.ScheduledStartDateTime),
           workCourt: f.WorkMatch?.Court?.Name,
           workTime: fmtTime(f.WorkMatch?.ScheduledStartDateTime),
           saturdayEvening: true,
           opponentResolved,
-          opponentPoolLabel: `Pool 6 (GRB Ct 11): ${pool6Label}`,
+          opponentPoolLabel,
           finishRange,
         });
       }
     }
 
-    // 3rd and 4th place — no Saturday evening match
-    futurePaths.push({
-      finishText: '3rd-P5',
-      rank: 3,
-      nextPlay: 'Round 3 Group 1 Bronze B Bracket (Sunday)',
-      nextPlayShort: 'Bronze B Bracket',
-      court: 'GRB Ct 6',
-      time: '8:30 AM Sun',
-      workCourt: 'GRB Ct 6',
-      workTime: '9:30 AM Sun',
-      saturdayEvening: false,
-      note: 'No Saturday evening match — straight to Sunday Bronze B',
-      finishRange: '4 teams · Bronze B bracket (mid-lower tier)',
-    });
-    futurePaths.push({
-      finishText: '4th-P5',
-      rank: 4,
-      nextPlay: 'Round 3 Group 1 Flight 1C Bracket (Sunday)',
-      nextPlayShort: 'Flight 1C Bracket',
-      court: 'GRB Ct 5',
-      time: '9:30 AM Sun',
-      workCourt: 'GRB Ct 5',
-      workTime: '10:30 AM Sun',
-      saturdayEvening: false,
-      note: 'No Saturday evening match — straight to Sunday Flight 1C',
-      finishRange: '4 teams · Flight 1C bracket (lower tier)',
-    });
+    // 3rd and 4th — find dynamically from Sunday bracket source tags
+    const thirdTag = `3rd-P${poolNumber}`;
+    const fourthTag = `4th-P${poolNumber}`;
+    const thirdInfo = findSundayBracketForTag(thirdTag);
+    const fourthInfo = findSundayBracketForTag(fourthTag);
 
-    // --- Sunday bracket info (with live team seeding once populated) ---
+    if (thirdInfo) {
+      futurePaths.push({
+        finishText: `3rd-P${poolNumber}`,
+        rank: 3,
+        nextPlay: `Round 3 Group 1 ${thirdInfo.bracketName} (Sunday)`,
+        nextPlayShort: thirdInfo.bracketName,
+        court: thirdInfo.court,
+        time: thirdInfo.time,
+        workCourt: thirdInfo.workCourt,
+        workTime: thirdInfo.workTime,
+        saturdayEvening: false,
+        note: 'No Saturday evening match — straight to Sunday bracket',
+        finishRange: `4 teams · ${thirdInfo.bracketName}`,
+      });
+    }
+    if (fourthInfo) {
+      futurePaths.push({
+        finishText: `4th-P${poolNumber}`,
+        rank: 4,
+        nextPlay: `Round 3 Group 1 ${fourthInfo.bracketName} (Sunday)`,
+        nextPlayShort: fourthInfo.bracketName,
+        court: fourthInfo.court,
+        time: fourthInfo.time,
+        workCourt: fourthInfo.workCourt,
+        workTime: fourthInfo.workTime,
+        saturdayEvening: false,
+        note: 'No Saturday evening match — straight to Sunday bracket',
+        finishRange: `4 teams · ${fourthInfo.bracketName}`,
+      });
+    }
+
+    // --- Sunday bracket info ---
     const sundayBrackets: object[] = [];
     if (day2) {
       for (const play of day2) {
-        const teams = (play.Teams || []).map((t: { TeamName: string; TeamCode: string; FinishRank: number | null }) => ({
+        if (!play || typeof play !== 'object') continue;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const teams = (play.Teams || []).map((t: any) => ({
           teamName: t.TeamName,
           teamCode: t.TeamCode,
-          isUs: t.TeamCode?.toLowerCase() === TEAM_CODE.toLowerCase(),
+          isUs: t.TeamCode?.toLowerCase() === teamCode.toLowerCase(),
           finishRank: t.FinishRank,
         }));
         sundayBrackets.push({
@@ -228,20 +346,22 @@ export async function GET() {
 
     return NextResponse.json({
       team: TEAM_NAME,
-      teamCode: TEAM_CODE,
+      teamCode,
+      teamId: TEAM_ID,
       event: '2026 Lone Star Regionals (12-14s)',
       venue: 'George R. Brown Convention Center',
       dates: 'May 9-10, 2026',
       division: '14 Bid',
       fetchedAt: new Date().toISOString(),
-      poolName,
-      poolCourt,
+      poolName: ourPool.CompleteFullName || ourPool.FullName,
+      poolCourt: ourPool.Courts?.[0]?.Name || '',
       poolStandings,
       poolMatches,
       workAssignments,
       futurePaths,
       sundayBrackets,
     });
+
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }

@@ -4,11 +4,11 @@ import { useEffect, useState, useCallback } from 'react';
 
 interface SetScore { us: number | null; them: number | null }
 interface PoolMatch {
-  matchName: string; time: string; court: string;
+  matchName: string; time: string; date: string; court: string;
   opponent: string; opponentCode: string; workTeam: string;
   hasScores: boolean; sets: SetScore[]; weWon: boolean | null;
 }
-interface WorkAssignment { play: string; time: string; court: string }
+interface WorkAssignment { play: string; time: string; date: string; court: string }
 interface FuturePath {
   finishText: string; rank: number;
   nextPlay: string; nextPlayShort: string;
@@ -16,8 +16,6 @@ interface FuturePath {
   workCourt: string | null; workTime: string | null;
   saturdayEvening: boolean;
   note?: string;
-  opponentSeed?: string;
-  opponentPool?: string;
   opponentResolved?: string;
   opponentPoolLabel?: string;
   finishRange?: string;
@@ -34,7 +32,7 @@ interface Standing {
   matchPct: string; finishRank: number | null; overallRank: number | null;
 }
 interface TournamentData {
-  team: string; teamCode: string; event: string;
+  team: string; teamCode: string; teamId: string; event: string;
   venue: string; dates: string; division: string;
   fetchedAt: string; poolName: string; poolCourt: string;
   poolStandings: Standing[];
@@ -42,6 +40,9 @@ interface TournamentData {
   workAssignments: WorkAssignment[];
   futurePaths: FuturePath[];
   sundayBrackets: SundayBracket[];
+}
+interface TeamOption {
+  teamId: string; teamName: string; teamCode: string; club: string; pool: string;
 }
 
 function timeAgo(iso: string) {
@@ -69,19 +70,29 @@ function SetScores({ sets, hasScores }: { sets: SetScore[]; hasScores: boolean }
   );
 }
 
+const DEFAULT_TEAM = 'g14askyl2ls';
+
 export default function Home() {
   const [data, setData] = useState<TournamentData | null>(null);
+  const [teams, setTeams] = useState<TeamOption[]>([]);
+  const [selectedTeam, setSelectedTeam] = useState(DEFAULT_TEAM);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [lastRefresh, setLastRefresh] = useState('');
 
-  const fetchData = useCallback(async () => {
+  // Load team list once
+  useEffect(() => {
+    fetch('/api/teams').then(r => r.json()).then(d => setTeams(d.teams || []));
+  }, []);
+
+  const fetchData = useCallback(async (teamCode: string) => {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/tournament?t=' + Date.now());
+      const res = await fetch(`/api/tournament?team=${teamCode}&t=${Date.now()}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
+      if (json.error) throw new Error(json.error);
       setData(json);
       setLastRefresh(new Date().toISOString());
     } catch (e) {
@@ -91,32 +102,70 @@ export default function Home() {
     }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { fetchData(selectedTeam); }, [fetchData, selectedTeam]);
 
   // Auto-refresh every 90 seconds
   useEffect(() => {
-    const interval = setInterval(fetchData, 90_000);
+    const interval = setInterval(() => fetchData(selectedTeam), 90_000);
     return () => clearInterval(interval);
-  }, [fetchData]);
+  }, [fetchData, selectedTeam]);
+
+  function handleTeamChange(code: string) {
+    setSelectedTeam(code);
+    setData(null);
+  }
+
+  // Group teams by pool for the dropdown
+  const poolGroups: Record<string, TeamOption[]> = {};
+  for (const t of teams) {
+    if (!poolGroups[t.pool]) poolGroups[t.pool] = [];
+    poolGroups[t.pool].push(t);
+  }
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans">
       {/* Header */}
       <div className="bg-zinc-900 border-b border-zinc-800 px-4 py-4 sticky top-0 z-10">
-        <div className="max-w-2xl mx-auto flex items-center justify-between">
-          <div>
-            <div className="text-xs text-zinc-500 uppercase tracking-widest mb-0.5">Lone Star Regionals 2026</div>
-            <div className="font-bold text-white text-lg leading-tight">Austin Skyline 14 Black</div>
+        <div className="max-w-2xl mx-auto">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <div className="text-xs text-zinc-500 uppercase tracking-widest mb-0.5">Lone Star Regionals 2026</div>
+              <div className="font-bold text-white text-lg leading-tight truncate">
+                {data?.team || 'Loading…'}
+              </div>
+              <div className="text-zinc-500 text-xs">{data?.poolName}</div>
+            </div>
+            <button
+              onClick={() => fetchData(selectedTeam)}
+              disabled={loading}
+              className="bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-sm px-3 py-2 rounded-lg flex items-center gap-2 transition-colors shrink-0"
+            >
+              <span className={loading ? 'animate-spin inline-block' : ''}>↻</span>
+              {loading ? 'Loading…' : 'Refresh'}
+            </button>
           </div>
-          <button
-            onClick={fetchData}
-            disabled={loading}
-            className="bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-sm px-3 py-2 rounded-lg flex items-center gap-2 transition-colors"
-          >
-            <span className={loading ? 'animate-spin' : ''}>↻</span>
-            {loading ? 'Loading…' : 'Refresh'}
-          </button>
+
+          {/* Team selector */}
+          <div className="relative">
+            <select
+              value={selectedTeam}
+              onChange={e => handleTeamChange(e.target.value)}
+              className="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 text-sm rounded-lg px-3 py-2 pr-8 appearance-none focus:outline-none focus:border-yellow-500"
+            >
+              {Object.entries(poolGroups).map(([pool, poolTeams]) => (
+                <optgroup key={pool} label={pool}>
+                  {poolTeams.map(t => (
+                    <option key={t.teamCode} value={t.teamCode}>
+                      {t.teamName} ({t.teamCode})
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 text-xs">▼</div>
+          </div>
         </div>
+
         {lastRefresh && (
           <div className="max-w-2xl mx-auto mt-1 text-xs text-zinc-600">
             Updated {timeAgo(lastRefresh)} · auto-refreshes every 90s
@@ -127,6 +176,12 @@ export default function Home() {
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
         {error && (
           <div className="bg-red-950 border border-red-800 rounded-xl p-4 text-red-300 text-sm">{error}</div>
+        )}
+
+        {loading && !data && (
+          <div className="flex items-center justify-center py-20 text-zinc-500">
+            Loading tournament data…
+          </div>
         )}
 
         {data && (
@@ -165,20 +220,12 @@ export default function Home() {
                           </div>
                           <div className="text-zinc-600 text-xs">{s.teamCode}</div>
                         </td>
-                        <td className="text-center px-2 py-3 text-zinc-300">
-                          {s.matchesWon}-{s.matchesLost}
-                        </td>
-                        <td className="text-center px-2 py-3 text-zinc-300">
-                          {s.setsWon}-{s.setsLost}
-                        </td>
+                        <td className="text-center px-2 py-3 text-zinc-300">{s.matchesWon}-{s.matchesLost}</td>
+                        <td className="text-center px-2 py-3 text-zinc-300">{s.setsWon}-{s.setsLost}</td>
                         <td className="text-center px-2 py-3">
                           {s.finishRank ? (
-                            <span className="bg-zinc-700 text-zinc-200 rounded px-2 py-0.5 text-xs font-bold">
-                              #{s.finishRank}
-                            </span>
-                          ) : (
-                            <span className="text-zinc-600 text-xs">—</span>
-                          )}
+                            <span className="bg-zinc-700 text-zinc-200 rounded px-2 py-0.5 text-xs font-bold">#{s.finishRank}</span>
+                          ) : <span className="text-zinc-600 text-xs">—</span>}
                         </td>
                       </tr>
                     ))}
@@ -187,23 +234,20 @@ export default function Home() {
               </div>
             )}
 
-            {/* Saturday pool matches */}
+            {/* Pool matches */}
             <div>
-              <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">
-                Saturday May 9 — Pool Matches
-              </div>
+              <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Pool Matches</div>
               <div className="space-y-3">
                 {data.poolMatches.map((m, i) => (
                   <div key={i} className={`bg-zinc-900 rounded-xl border p-4 ${
                     m.weWon === true ? 'border-emerald-800' :
-                    m.weWon === false ? 'border-red-900' :
-                    'border-zinc-800'
+                    m.weWon === false ? 'border-red-900' : 'border-zinc-800'
                   }`}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
                           <span className="text-xs text-zinc-500 font-mono">{m.matchName}</span>
-                          <span className="text-xs text-zinc-600">{m.time}</span>
+                          <span className="text-xs text-zinc-600">{m.date} {m.time}</span>
                           <span className="text-xs text-zinc-600">{m.court}</span>
                         </div>
                         <div className="font-semibold text-white text-base">vs {m.opponent}</div>
@@ -211,16 +255,12 @@ export default function Home() {
                         <SetScores sets={m.sets} hasScores={m.hasScores} />
                       </div>
                       {m.weWon !== null && (
-                        <div className={`text-xs font-bold px-2 py-1 rounded shrink-0 ${
-                          m.weWon ? 'bg-emerald-900 text-emerald-300' : 'bg-red-900 text-red-300'
-                        }`}>
+                        <div className={`text-xs font-bold px-2 py-1 rounded shrink-0 ${m.weWon ? 'bg-emerald-900 text-emerald-300' : 'bg-red-900 text-red-300'}`}>
                           {m.weWon ? 'WIN' : 'LOSS'}
                         </div>
                       )}
                     </div>
-                    <div className="mt-2 text-xs text-zinc-600 border-t border-zinc-800 pt-2">
-                      Work team: {m.workTeam}
-                    </div>
+                    <div className="mt-2 text-xs text-zinc-600 border-t border-zinc-800 pt-2">Work team: {m.workTeam}</div>
                   </div>
                 ))}
               </div>
@@ -229,13 +269,11 @@ export default function Home() {
             {/* Work assignments */}
             {data.workAssignments.length > 0 && (
               <div>
-                <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">
-                  Saturday — Work / Ref Assignments
-                </div>
+                <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Work / Ref Assignments</div>
                 <div className="space-y-2">
                   {data.workAssignments.map((w, i) => (
                     <div key={i} className="bg-zinc-900 rounded-xl border border-zinc-800 px-4 py-3 flex items-center gap-4">
-                      <div className="text-zinc-400 font-mono text-sm font-semibold w-20">{w.time}</div>
+                      <div className="text-zinc-400 font-mono text-sm font-semibold w-28">{w.date} {w.time}</div>
                       <div>
                         <div className="text-zinc-300 text-sm">{w.play}</div>
                         <div className="text-zinc-600 text-xs">{w.court}</div>
@@ -246,12 +284,10 @@ export default function Home() {
               </div>
             )}
 
-            {/* Saturday evening bracket paths */}
+            {/* Bracket paths */}
             {data.futurePaths.length > 0 && (
               <div>
-                <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">
-                  Saturday Evening — Bracket Paths
-                </div>
+                <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Bracket Paths</div>
                 <div className="space-y-3">
                   {data.futurePaths.map((f, i) => (
                     <div key={i} className={`bg-zinc-900 rounded-xl border p-4 ${f.saturdayEvening ? 'border-zinc-800' : 'border-zinc-700'}`}>
@@ -262,21 +298,20 @@ export default function Home() {
                           </div>
                           <div className="font-semibold text-white">{f.nextPlayShort}</div>
                           <div className="text-zinc-400 text-sm">{f.nextPlay}</div>
-                          {f.finishRange && f.saturdayEvening && (
-                            <div className="mt-1 bg-zinc-800 rounded-lg px-3 py-2 text-xs space-y-0.5">
-                              {f.finishRange.split('\n').map((line, i) => (
-                                <div key={i} className={i === 0 ? 'text-emerald-400' : 'text-zinc-400'}>{line}</div>
-                              ))}
+                          {f.finishRange && (
+                            <div className={`mt-1 bg-zinc-800 rounded-lg px-3 py-2 text-xs ${f.saturdayEvening ? 'space-y-0.5' : ''}`}>
+                              {f.saturdayEvening ? f.finishRange.split('\n').map((line, li) => (
+                                <div key={li} className={li === 0 ? 'text-emerald-400' : 'text-zinc-400'}>{line}</div>
+                              )) : (
+                                <div className="text-zinc-400">{f.finishRange}</div>
+                              )}
                             </div>
                           )}
-                          {f.finishRange && !f.saturdayEvening && (
-                            <div className="mt-1 bg-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-400">{f.finishRange}</div>
-                          )}
-                          {(f.opponentResolved || f.opponentSeed) && (
-                            <div className="mt-1 text-sm">
+                          {f.opponentResolved && (
+                            <div className="mt-2 text-sm">
                               <span className="text-zinc-500 text-xs block">Opponent</span>
-                              <span className="text-zinc-300">{f.opponentResolved || f.opponentSeed}</span>
-                              <div className="text-zinc-600 text-xs mt-0.5">{f.opponentPoolLabel || f.opponentPool}</div>
+                              <span className="text-zinc-300">{f.opponentResolved}</span>
+                              <div className="text-zinc-600 text-xs mt-0.5">{f.opponentPoolLabel}</div>
                             </div>
                           )}
                           <div className="mt-2 flex flex-wrap gap-4 text-sm">
@@ -295,11 +330,7 @@ export default function Home() {
                             <div className="mt-2 text-xs text-zinc-600 italic">{f.note}</div>
                           )}
                         </div>
-                        <div className={`text-xs px-2 py-1 rounded shrink-0 font-semibold ${
-                          f.saturdayEvening
-                            ? 'bg-zinc-700 text-zinc-300'
-                            : 'bg-zinc-800 text-zinc-500'
-                        }`}>
+                        <div className={`text-xs px-2 py-1 rounded shrink-0 font-semibold ${f.saturdayEvening ? 'bg-zinc-700 text-zinc-300' : 'bg-zinc-800 text-zinc-500'}`}>
                           {f.saturdayEvening ? 'Sat Eve' : 'Sun Only'}
                         </div>
                       </div>
@@ -309,16 +340,13 @@ export default function Home() {
               </div>
             )}
 
-            {/* Sunday info */}
+            {/* Sunday brackets */}
             <div>
-              <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">
-                Sunday May 10 — Final Brackets
-              </div>
+              <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Sunday May 10 — Final Brackets</div>
               {(() => {
                 const ourBracket = data.sundayBrackets.find(b => b.weAreIn);
                 const populatedBrackets = data.sundayBrackets.filter(b => b.hasTeams);
                 if (ourBracket) {
-                  // We know our Sunday bracket - show it prominently
                   return (
                     <div className="space-y-3">
                       <div className="bg-zinc-900 rounded-xl border border-yellow-700 p-4">
@@ -373,7 +401,7 @@ export default function Home() {
                   <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-4">
                     <div className="text-zinc-400 text-sm">
                       Sunday placement depends on Saturday pool finish and evening bracket results.
-                      Available brackets range from Gold (top 8 of 64) down through Silver, Bronze, and Flight.
+                      Available brackets: Gold, Silver A-D, Bronze A-D, Flight 1A-1D.
                     </div>
                     <div className="mt-3 space-y-1">
                       {data.sundayBrackets.map((b, i) => (
@@ -391,12 +419,6 @@ export default function Home() {
               Auto-refreshes every 90 seconds
             </div>
           </>
-        )}
-
-        {loading && !data && (
-          <div className="flex items-center justify-center py-20 text-zinc-500">
-            Loading tournament data…
-          </div>
         )}
       </div>
     </div>
