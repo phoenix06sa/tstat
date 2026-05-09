@@ -22,6 +22,43 @@ Built for the 2026 Lone Star Regionals, tracking **Austin Skyline 14 Black (g14a
 
 ---
 
+## ⚠️ Important Caveat — One Tournament Sample
+
+Everything in this document is based on a **single tournament**: the 2026 Lone Star Regionals (12-14s), 14 Bid division, 64 teams. We have no way to know yet how much of this generalizes to other tournaments. Here's our best assessment:
+
+**Almost certainly the same across AES tournaments:**
+- The API endpoint patterns (same URL structure, same headers needed)
+- The core data fields (`TeamCode`, `TeamId`, `MatchesWon`, `FinishRank`, `HasScores`, `Sets`, etc.)
+- The `/schedule/current`, `/schedule/past`, `/schedule/future`, `/schedule/work` endpoints
+- The `Roots` tree structure for brackets (with `TopSource`/`BottomSource` nesting)
+- The fact that seed text (`1st-P5`) gets replaced with real team names after pool play
+- The fact that `/schedule/future` only returns 1st/2nd place paths (not 3rd/4th) during pool play
+
+**Likely to differ between tournaments:**
+- The number of teams and pools (this one had 64 teams, 16 pools of 4 — other events may have 32, 48, 128, etc.)
+- The bracket tier names (Gold/Silver A-D/Bronze A-D/Flight 1A-D was specific to this 64-team format — a 32-team event will have a completely different structure)
+- The finish ranges (1st–16th for Gold, 17th–20th for Silver, etc. all depend on team count and bracket sizes)
+- The number of Saturday evening challenge brackets (we had 16 because we had 16 pools — scales with pool count)
+- Whether there IS a Saturday evening round at all — some smaller tournaments go straight from pool play to Sunday brackets with no Saturday evening play
+- The specific courts, times, and session dates
+- Whether 3rd/4th place play Saturday evening or skip to Sunday (this varied even within this event)
+
+**What this means for next season:**
+- The API discovery code and endpoint patterns should work as-is on any AES tournament
+- The `sundayFinishRanges` map (Gold → 1st–16th, Silver → 17th–20th, etc.) will need to be recalculated based on the new tournament's team count and bracket names — check `/plays/{sunday_date}` to see what brackets exist and how many teams feed into each
+- The bracket tier logic may need updating if the tournament uses different naming conventions
+- Finding EVENT_ID, DIV_ID, and TEAM_CODE is always manual — we need the URL to start
+
+**The single best thing you can do to restart next season:**
+Paste the AES results URL into the chat. Something like:
+> "Here is next year's tournament: https://results.advancedeventsystems.com/event/XXXXX/divisions/YYYYY/overview — our team code is g15askyl1ls"
+
+That's enough to get started. Hermes can pull the API, discover the bracket structure, compare it to these notes, and figure out what needs to change. The core code will likely need only 3-4 constant updates (event ID, div ID, dates) for a similar tournament, or a bit more work if the bracket structure is significantly different.
+
+**Open question for next season:** Could we automate finding the URL? Possibly — AES may have a search endpoint, or the club posts it on their website. A future enhancement would be a small input where you paste the AES URL once and everything auto-discovers. That's the right long-term solution, especially once this gets integrated into the Austin Select Volleyball site.
+
+---
+
 ## The AES Platform (Critical Background)
 
 AES (Advanced Event Systems) is the tournament software used by most USAV regional qualifiers and nationals. Results pages are at:
