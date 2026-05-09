@@ -100,10 +100,11 @@ export async function GET(req: Request) {
     const poolNumber = ourPool.FullName.replace('Pool ', ''); // e.g. "5"
 
     // --- Fetch team-specific schedule ---
-    const [current, work, future] = await Promise.all([
+    const [current, work, future, past] = await Promise.all([
       aes(`/api/event/${EVENT}/division/${DIV}/team/${TEAM_ID}/schedule/current`),
       aes(`/api/event/${EVENT}/division/${DIV}/team/${TEAM_ID}/schedule/work`),
       aes(`/api/event/${EVENT}/division/${DIV}/team/${TEAM_ID}/schedule/future`),
+      aes(`/api/event/${EVENT}/division/${DIV}/team/${TEAM_ID}/schedule/past`),
     ]);
 
     // --- Pool standings ---
@@ -121,32 +122,58 @@ export async function GET(req: Request) {
       overallRank: t.OverallRank,
     }));
 
-    // --- Pool play matches ---
+    // --- Pool play matches: combine past (completed) + current pool play (upcoming) ---
+    // After pool play ends, /schedule/current only shows bracket matches.
+    // /schedule/past has all completed matches. We merge both and deduplicate by matchId.
     const poolMatches: object[] = [];
+    const seenMatchIds = new Set<number>();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const addMatch = (m: any, playType: number, iFirst: boolean) => {
+      const matchId = m.MatchId || m.matchId;
+      if (seenMatchIds.has(matchId)) return;
+      seenMatchIds.add(matchId);
+      const opponent = iFirst ? m.SecondTeamName : m.FirstTeamName;
+      const opponentCode = iFirst ? m.SecondTeamCode : m.FirstTeamCode;
+      const ourWon = iFirst ? m.FirstTeamWon : m.SecondTeamWon;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sets = (m.Sets || []).map((s: any) => ({
+        us: iFirst ? s.FirstTeamScore : s.SecondTeamScore,
+        them: iFirst ? s.SecondTeamScore : s.FirstTeamScore,
+      }));
+      poolMatches.push({
+        matchName: m.MatchFullName,
+        time: fmtTime(m.ScheduledStartDateTime),
+        date: fmtDate(m.ScheduledStartDateTime),
+        court: m.Court?.Name,
+        opponent,
+        opponentCode,
+        workTeam: m.WorkTeamText,
+        hasScores: m.HasScores,
+        sets,
+        weWon: m.HasScores ? ourWon : null,
+        isPoolPlay: playType === 0,
+      });
+    }
+
+    // Past matches (completed)
+    if (past) {
+      for (const block of past) {
+        const m = block.Match;
+        if (!m) continue;
+        const playType = block.Play?.Type ?? block.PlayType ?? 0;
+        const iFirst = m.FirstTeamId === Number(TEAM_ID);
+        addMatch(m, playType, iFirst);
+      }
+    }
+
+    // Current matches (upcoming/in-progress)
     if (current) {
       for (const block of current) {
+        const playType = block.Play?.Type ?? 0;
         for (const m of (block.Matches || [])) {
           const iFirst = m.FirstTeamId === Number(TEAM_ID);
-          const opponent = iFirst ? m.SecondTeamName : m.FirstTeamName;
-          const opponentCode = iFirst ? m.SecondTeamCode : m.FirstTeamCode;
-          const ourWon = iFirst ? m.FirstTeamWon : m.SecondTeamWon;
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const sets = (m.Sets || []).map((s: any) => ({
-            us: iFirst ? s.FirstTeamScore : s.SecondTeamScore,
-            them: iFirst ? s.SecondTeamScore : s.FirstTeamScore,
-          }));
-          poolMatches.push({
-            matchName: m.MatchFullName,
-            time: fmtTime(m.ScheduledStartDateTime),
-            date: fmtDate(m.ScheduledStartDateTime),
-            court: m.Court?.Name,
-            opponent,
-            opponentCode,
-            workTeam: m.WorkTeamText,
-            hasScores: m.HasScores,
-            sets,
-            weWon: m.HasScores ? ourWon : null,
-          });
+          addMatch(m, playType, iFirst);
         }
       }
     }
@@ -187,23 +214,21 @@ export async function GET(req: Request) {
 
     // --- Find 3rd/4th Sunday bracket info dynamically ---
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    function findSundayBracketForTag(tag: string): { bracketName: string; court: string; time: string; workCourt: string; workTime: string } | null {
+    const findSundayBracketForTag = (tag: string): { bracketName: string; court: string; time: string; workCourt: string; workTime: string } | null => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const findMatchWithTag = (node: any): any => {
+        if (!node) return null;
+        const m = node.Match || {};
+        if (m.FirstTeamText === tag || m.SecondTeamText === tag) return m;
+        return findMatchWithTag(node.TopSource) || findMatchWithTag(node.BottomSource);
+      };
       for (const b of day2) {
         if (!b || typeof b !== 'object') continue;
         const sources = extractAllSources(b);
         if (!sources.has(tag)) continue;
-        // Find the first sub-match that references this tag
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        function findMatchWithTag(node: any): any {
-          if (!node) return null;
-          const m = node.Match || {};
-          if (m.FirstTeamText === tag || m.SecondTeamText === tag) return m;
-          return findMatchWithTag(node.TopSource) || findMatchWithTag(node.BottomSource);
-        }
         for (const r of (b.Roots || [])) {
           const m = findMatchWithTag(r.TopSource) || findMatchWithTag(r.BottomSource);
           if (m) {
-            // Work match is the one right after — find the root match for timing
             const rootM = r.Match || {};
             return {
               bracketName: b.FullName,
@@ -217,11 +242,10 @@ export async function GET(req: Request) {
         return { bracketName: b.FullName, court: '', time: '', workCourt: '', workTime: '' };
       }
       return null;
-    }
+    };
 
     // --- Discover Sunday bracket placement for winner/loser of our challenge brackets ---
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    function findSundayForChBrkt(brktShortName: string, outcome: 'Winner' | 'Loser'): { bracketName: string; teamCount: number } | null {
+    const findSundayForChBrkt = (brktShortName: string, outcome: 'Winner' | 'Loser'): { bracketName: string; teamCount: number } | null => {
       const tag = `${outcome} of ${brktShortName}M1`;
       for (const b of day2) {
         if (!b || typeof b !== 'object') continue;
@@ -232,7 +256,7 @@ export async function GET(req: Request) {
         }
       }
       return null;
-    }
+    };
 
     // --- Build future paths ---
     const futurePaths: object[] = [];
