@@ -1,0 +1,312 @@
+# tstat — Tournament Tracker: Project Notes
+
+**Last updated:** May 9, 2026  
+**Author:** Built with Hermes Agent (claude-sonnet-4-6)  
+**GitHub:** https://github.com/phoenix06sa/tstat  
+**Netlify:** (connect repo to Netlify — see deploy section below)
+
+---
+
+## What This Is
+
+A mobile-friendly Next.js web app that tracks a volleyball team through a tournament weekend in real time. It pulls live data from the AES (Advanced Event Systems) tournament platform and displays:
+
+- Pool standings with tiebreaker explanations
+- All pool match results with set scores (WIN/LOSS badges)
+- Challenge bracket matchups with confirmed opponents
+- Bracket outcome paths — best and worst possible finish for each pool result
+- Sunday bracket seeding once it populates Saturday night
+- Auto-refreshes every 90 seconds
+
+Built for the 2026 Lone Star Regionals, tracking **Austin Skyline 14 Black (g14askyl2ls)** in the 14 Bid division. Designed to be reused for any team in any AES tournament next season with minimal changes.
+
+---
+
+## The AES Platform (Critical Background)
+
+AES (Advanced Event Systems) is the tournament software used by most USAV regional qualifiers and nationals. Results pages are at:
+
+```
+https://results.advancedeventsystems.com/event/{EVENT_ID}/divisions/{DIV_ID}/overview
+```
+
+The site is a JavaScript SPA. The real data comes from a JSON API, not the HTML. Everything we built reverse-engineers that API.
+
+### How to Find the IDs for a New Tournament
+
+1. Go to the tournament results URL (the club posts it on their website or AES sends it)
+2. The URL contains the EVENT_ID: e.g. `PTAwMDAwNDEyNDA90`
+3. Click on your division in the UI — the URL changes to include the DIV_ID: e.g. `195174`
+4. Open browser DevTools → Network tab → filter by `/api/` — you'll see requests like:
+   - `/api/event/{EVENT_ID}/division/{DIV_ID}/plays/2026-05-09`
+5. To find your TEAM_ID and TEAM_CODE, look at `/api/event/{EVENT_ID}/division/{DIV_ID}/plays/{date}` — scroll through the pool Teams arrays to find your team. The TeamCode looks like `g14askyl2ls` and the TeamId is a number like `84723`.
+
+**For the 2026 Lone Star Regionals:**
+- EVENT_ID: `PTAwMDAwNDEyNDA90`
+- DIV_ID: `195174`
+- TEAM_ID: `84723`
+- TEAM_CODE: `g14askyl2ls`
+- TEAM_NAME: Austin Skyline 14 Black
+
+---
+
+## Key API Endpoints (All GET, No Auth Required)
+
+All endpoints are on `https://results.advancedeventsystems.com`. Send these headers to avoid getting blocked:
+
+```
+accept: application/json, text/plain, */*
+origin: https://results.advancedeventsystems.com
+referer: https://results.advancedeventsystems.com/
+user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) ...Chrome/124...
+```
+
+| Endpoint | What it returns |
+|---|---|
+| `/api/event/{EVENT}/division/{DIV}/plays/2026-05-09` | All pools + Saturday brackets with full team data, match structure, scores |
+| `/api/event/{EVENT}/division/{DIV}/plays/2026-05-10` | All Sunday brackets with seeding tree |
+| `/api/event/{EVENT}/division/{DIV}/team/{TEAM_ID}/schedule/current` | Team's current/upcoming match(es) |
+| `/api/event/{EVENT}/division/{DIV}/team/{TEAM_ID}/schedule/past` | Team's completed matches with scores |
+| `/api/event/{EVENT}/division/{DIV}/team/{TEAM_ID}/schedule/work` | Team's referee/work assignments |
+| `/api/event/{EVENT}/division/{DIV}/team/{TEAM_ID}/schedule/future` | Potential next bracket paths (1st/2nd only — see gotcha below) |
+| `/api/event/{EVENT}/division/{DIV}/playdays` | List of days with HasPools/HasBrackets flags |
+
+### Critical Gotcha: /schedule/future Changes Over Time
+
+- **Before pool play:** returns 2 paths with PotentialRankText like `1st-P5` and `2nd-P5`, pointing to the Saturday challenge bracket
+- **After pool play:** returns 2 paths pointing directly to Sunday brackets (Gold/Silver) — the intermediate challenge bracket step is gone
+- **It NEVER returns 3rd or 4th place paths** — those teams skip Saturday evening and go straight to Sunday lower brackets
+
+**Solution we built:** Use the Saturday bracket `Roots[].Match.FirstTeam.Code` / `SecondTeam.Code` fields to find which challenge bracket each pool team lands in (matched by TeamCode), then use Sunday bracket `Roots` tree to find 3rd/4th placement by team name text (`"TeamName (LS)"` format).
+
+### Critical Gotcha: Pool Seed Text Gets Replaced
+
+- **Before pool play ends:** Saturday bracket Roots show `FirstTeamText: "1st-P5"`, `SecondTeamText: "2nd-P6"`
+- **After pool play ends:** Those get replaced with actual team names like `"Austin Skyline 14 Black (LS)"`
+- Similarly, Sunday bracket sources change from `"3rd-P5"` to actual team name text
+
+**Solution:** After pool play, find which bracket a team is in by matching `FirstTeam.Code` / `SecondTeam.Code` (team codes stay stable). For Sunday brackets, search the full `Roots` tree for the team's text `"TeamName (LS)"`.
+
+---
+
+## Tournament Structure (2026 Lone Star Regionals, 14 Bid Division)
+
+64 teams total, 16 pools of 4 teams each.
+
+**Saturday:**
+- Morning: Pool play (3 matches per team, 5-6 hours)
+- Evening: 1st and 2nd place from each pool go to Saturday Challenge Brackets (one match each, 16 brackets total)
+- 3rd and 4th place from each pool skip Saturday evening — they go straight to Sunday
+
+**Sunday:**
+- Gold Bracket: 16 teams (all 16 Saturday challenge bracket winners) → finish 1st–16th
+- Silver A/B/C/D: 4 teams each (Saturday challenge bracket losers, split into 4 groups) → finish ~17th–20th
+  - Note: Silver A through D are all the SAME tier. The letter is just organizational (different courts/times). Winning Silver D is equal to winning Silver A.
+- Bronze A/B/C/D: 4 teams each (3rd place pool finishers) → finish ~33rd–36th
+- Flight 1A/B/C/D: 4 teams each (4th place pool finishers) → finish ~49th–52nd
+
+**Bracket seeding pattern for Pool 5 (our pool):**
+- Pool 5 1st → Challenge Bracket #5 (vs Pool 6 2nd) → winner to Gold, loser to Silver C
+- Pool 5 2nd → Challenge Bracket #6 (vs Pool 6 1st) → winner to Gold, loser to Silver D
+- Pool 5 3rd → Bronze B Bracket (Sunday 8:30 AM, GRB Ct 6)
+- Pool 5 4th → Flight 1C Bracket (Sunday 9:30 AM, GRB Ct 5)
+
+**For next season:** The bracket numbering pattern will likely be different. Don't hardcode these — the app discovers them dynamically from the Roots tree data.
+
+---
+
+## Tiebreaker Logic
+
+AES uses this order to break ties in pool standings:
+1. Match win %
+2. Set win %  
+3. Point ratio
+
+All three values are available in the API: `MatchPercent`, `SetPercent`, `PointRatio` on each team in the pool play data. The `FinishRank` field is also set once pool play is complete.
+
+**Our implementation:** We group teams by match record, then check if set % differs to determine tiebreaker reason, and display it under each tied team's row in the standings table.
+
+**2026 Pool 5 result:** 3-way tie at 1-2. Austin Skyline 14 Black won 2nd place via set % (42.9%) over Roots (37.5%) and United VBA Purple (28.6%).
+
+---
+
+## Project Structure
+
+```
+~/Projects/lone-star-tracker/
+├── app/
+│   ├── api/
+│   │   ├── teams/route.ts        # Returns list of all 64 teams for the dropdown
+│   │   └── tournament/route.ts   # Main data API — all match/bracket/path data
+│   ├── page.tsx                  # Main UI (client component)
+│   ├── layout.tsx
+│   └── globals.css
+├── netlify.toml                  # Build config for Netlify
+├── package.json
+├── NOTES.md                      # This file
+└── tsconfig.json
+```
+
+### app/api/teams/route.ts
+Fetches `/plays/2026-05-09`, extracts all teams from all pools, returns them grouped by pool for the dropdown. Called once on page load. Cached 5 minutes.
+
+### app/api/tournament/route.ts
+The main workhorse. Accepts `?team={teamCode}` query param (default: `g14askyl2ls`).
+
+Steps it performs:
+1. Fetches day1 (Saturday plays) and day2 (Sunday plays) in parallel
+2. Finds the team's pool from day1 pool data
+3. Fetches team's current/past/work/future schedules in parallel
+4. Computes pool standings with tiebreaker explanations
+5. Builds match list: combines `past` (completed with scores) + `current` (upcoming/in-progress), deduped by MatchId, tagged `isPoolPlay` vs bracket
+6. Finds which challenge brackets each pool rank feeds into — using `FirstTeam.Code`/`SecondTeam.Code` in Saturday bracket Roots (stable after pool play, unlike seed text)
+7. Builds all 4 bracket paths with:
+   - Real opponent (from bracket match data, not estimates)
+   - Scores/result if played
+   - Sunday destination for win and loss
+   - Best/worst finish range out of 64
+8. For 3rd/4th: searches Sunday bracket Roots trees for team's name text `"TeamName (LS)"`
+9. Builds Sunday bracket info with team seeding once populated
+
+### app/page.tsx
+Client component. Key behaviors:
+- Team dropdown groups all 64 teams by pool (Pool 1 → Pool 16)
+- Default team: `g14askyl2ls` (Austin Skyline 14 Black)
+- Auto-refreshes every 90 seconds via `setInterval`
+- Manual refresh button in sticky header
+- Shows `timeAgo()` for last refresh time
+
+UI sections (in order):
+1. Event info card
+2. Pool standings table (with tiebreaker notes under tied teams)
+3. Pool matches (with set scores, WIN/LOSS badges)
+4. Work/ref assignments
+5. **Bracket Play** — 4 cards, one per pool finish position, showing:
+   - Who is at that finish position (confirmed after pool play)
+   - Which bracket they play in Saturday evening (or Sunday if 3rd/4th)
+   - Confirmed opponent
+   - Set scores and WIN/LOSS once played
+   - Best/worst Sunday finish range out of 64
+   - Our card gets yellow border + star marker
+6. Sunday brackets — shows all brackets, highlights ours when seeded
+
+---
+
+## Dev Server Notes
+
+This project runs on port 3002 (3000 is Austin Select VB, 3001 is phxSportsCards).
+
+**Important: Turbopack does NOT work on ARM Mac (M1/M2/M3).** Must use webpack flag:
+```bash
+cd ~/Projects/lone-star-tracker
+./node_modules/.bin/next dev --webpack -p 3002
+```
+
+The `package.json` dev script already has `--webpack` set. If you see a Turbopack error, this is why.
+
+---
+
+## Netlify Deploy
+
+`netlify.toml` is already in the repo:
+```toml
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+```
+
+Steps to deploy:
+1. Push to GitHub (`phoenix06sa/tstat`)
+2. Go to app.netlify.com → Add new site → Import from GitHub → find `tstat`
+3. Build settings auto-fill from netlify.toml
+4. No environment variables needed — all data is fetched server-side from public AES endpoints
+
+---
+
+## What To Do Next Season
+
+### Step 1: Find the new tournament IDs
+When the 2026-2027 season tournament is posted, get the AES results URL and extract:
+- EVENT_ID (in the URL path)
+- DIV_ID (changes when you click your division)
+- TEAM_CODE (search the plays API for your team)
+- TEAM_ID (numeric, from the same plays API)
+
+### Step 2: Update the constants in route.ts
+```typescript
+// In app/api/tournament/route.ts and app/api/teams/route.ts
+const EVENT = 'YOUR_NEW_EVENT_ID';
+const DIV = 'YOUR_NEW_DIV_ID';
+```
+
+Also update the date strings in the API calls:
+```typescript
+aes(`/api/event/${EVENT}/division/${DIV}/plays/2026-05-09`),  // → update date
+aes(`/api/event/${EVENT}/division/${DIV}/plays/2026-05-10`),  // → update date
+```
+
+### Step 3: Update the finish range map if bracket structure changes
+The `sundayFinishRanges` map in `route.ts` is hardcoded to the 2026 Lone Star bracket structure (64 teams, Gold/Silver/Bronze/Flight). If next year's tournament has a different structure, update those ranges. The bracket names (Gold, Silver A-D, etc.) may be the same — check the `/plays/{sunday_date}` response to confirm.
+
+### Step 4: Update the default team code
+```typescript
+// In app/page.tsx
+const DEFAULT_TEAM = 'g14askyl2ls';  // → update to next year's team code
+```
+
+### Step 5: Test before the tournament
+Run the dev server and point it at the new event. Pool play data usually populates a few days before the tournament when schedules are finalized. Verify:
+- All 4 bracket path cards show (means the Saturday bracket Roots are populated)
+- The pool standings table shows your team
+- The team dropdown has your team in it
+
+### Future enhancement (already planned)
+Eventually integrate this into the main Austin Select Volleyball site (`austin-select-volleyball` on Netlify). The idea is to have a tournament tracker section that auto-populates based on the season schedule posted each year — staff enters the AES event URL once and the whole thing auto-fills from there. The AES API pattern is well documented above.
+
+---
+
+## Things That Tripped Us Up (Don't Repeat These)
+
+1. **Turbopack on ARM Mac** — crashes immediately. Always use `--webpack`.
+
+2. **`/schedule/future` API changes meaning after pool play** — before pool play it shows Saturday bracket paths; after it shows Sunday bracket paths directly. We had to detect the current stage and handle both.
+
+3. **Seed text (`1st-P5`) gets replaced with real team names after pool play** — can't rely on regex matching seed text once the tournament progresses. Use `FirstTeam.Code` / `SecondTeam.Code` for stable matching.
+
+4. **`/schedule/current` only shows the active play** — after pool play ends, it only shows the bracket match, not the pool matches. We added `/schedule/past` to always show completed matches regardless of stage.
+
+5. **3rd/4th place paths are never in `/schedule/future`** — the API omits them entirely. We derive them from the Sunday bracket tree by searching for the team's name text.
+
+6. **Sunday bracket `Teams` array is empty until Saturday night** — AES seeds Sunday brackets after Saturday evening results are finalized. The page handles this gracefully (shows bracket names, no teams yet).
+
+7. **Silver A/B/C/D are equal tier** — the letter suffix is purely organizational (4 groups of 4 teams on different courts), not a ranking. Don't label Silver D as "worse" than Silver A.
+
+8. **Gold bracket is 16 teams, NOT 8** — all 16 Saturday challenge bracket winners go to Gold. The 8 "final" matches shown in the Roots are the quarterfinal round of a full 16-team bracket.
+
+9. **The bracketOpponentPoolMap (from sampling future API per pool) became unreliable after pool play** — we replaced it with direct bracket Roots matching by team code.
+
+10. **Function declarations inside `try` blocks fail TypeScript strict mode** — use `const fn = () => {}` syntax instead of `function fn() {}` inside the route handler.
+
+---
+
+## 2026 Lone Star Regionals — Our Results
+
+Team: Austin Skyline 14 Black (g14askyl2ls)  
+Pool: 5 (GRB Court 12)  
+Pool opponents: TW Skyline 14 Royal, United VBA 14 Purple, Roots 14-2 Blue
+
+Pool results (1-2 record, 2nd place via set tiebreaker):
+- Match 2 vs Roots 14-2 Blue: LOSS (25-19, 22-25, 10-15)
+- Match 4 vs United VBA 14 Purple: WIN (26-24, 26-24)
+- Match 6 vs TW Skyline 14 Royal: LOSS (12-25, 16-25)
+
+Challenge Bracket #6 (Saturday evening, 6:30 PM, GRB Ct 7):
+- vs Austin Skyline 14 Royal (1st from Pool 6)
+- *(result TBD at time of writing — tournament still in progress)*
+
+---
+
+*These notes were generated by Hermes Agent during the build session on May 8-9, 2026. Update the "Our Results" section after the tournament concludes.*
