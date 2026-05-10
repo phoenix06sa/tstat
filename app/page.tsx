@@ -66,7 +66,6 @@ interface TournamentData {
   poolMatches: PoolMatch[];
   workAssignments: WorkAssignment[];
   futurePaths: FuturePath[];
-  sundayBrackets: SundayBracket[];
   activeSundayBracket: ActiveSundayBracket | null;
 }
 interface TeamOption {
