@@ -18,8 +18,14 @@ const AES_HEADERS = {
 async function aes(path: string): Promise<any> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const res = await fetch(`${BASE}${path}`, { headers: AES_HEADERS, next: { revalidate: 60 } } as any);
-  if (!res.ok) return null;
-  return res.json();
+  if (!res.ok || res.status === 204) return null;
+  const text = await res.text();
+  if (!text || text.trim() === '') return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }
 
 function fmtTime(iso: string) {
