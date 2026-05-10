@@ -550,7 +550,84 @@ export async function GET(req: Request) {
       }
     }
 
-    // --- Sunday bracket info ---
+    // --- Active Sunday bracket (if current play is a Sunday bracket) ---
+    let activeSundayBracket: object | null = null;
+    if (current && current.length > 0) {
+      const currentPlay = current[0]?.Play;
+      if (currentPlay?.Type === 1) {
+        // Find this bracket in day2
+        const sundayPlay = day2?.find((p: { FullName: string }) => p.FullName === currentPlay.FullName);
+        if (sundayPlay) {
+          // Walk the Roots tree to get all matches with times, opponents, scores
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const extractMatches = (roots: any[]): object[] => {
+            const result: object[] = [];
+            const seenIds = new Set<number>();
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const walkNode = (node: any, isFinal: boolean) => {
+              if (!node) return;
+              const m = node.Match || {};
+              if (!m.MatchId) return;
+              if (seenIds.has(m.MatchId)) return;
+              seenIds.add(m.MatchId);
+              const t1 = m.FirstTeam;
+              const t2 = m.SecondTeam;
+              const t1name = t1?.Name || m.FirstTeamText || '?';
+              const t2name = t2?.Name || m.SecondTeamText || '?';
+              const t1code = t1?.Code || '';
+              const t2code = t2?.Code || '';
+              const isUs1 = t1code.toLowerCase() === teamCode.toLowerCase();
+              const isUs2 = t2code.toLowerCase() === teamCode.toLowerCase();
+              const teamIsFirst = isUs1;
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const sets = (m.Sets || []).map((s: any) => ({
+                us: teamIsFirst ? s.FirstTeamScore : s.SecondTeamScore,
+                them: teamIsFirst ? s.SecondTeamScore : s.FirstTeamScore,
+              })).filter((s: { us: number | null }) => s.us !== null);
+              const ourWon = m.HasScores ? (isUs1 ? m.FirstTeamWon : m.SecondTeamWon) : null;
+              result.push({
+                matchName: m.FullName,
+                time: fmtTime(m.ScheduledStartDateTime),
+                court: m.Court?.Name || '',
+                team1: t1name,
+                team2: t2name,
+                team1code: t1code,
+                team2code: t2code,
+                hasUs: isUs1 || isUs2,
+                hasScores: m.HasScores || false,
+                weWon: ourWon,
+                sets,
+                isFinal,
+              });
+              walkNode(node.TopSource, false);
+              walkNode(node.BottomSource, false);
+            };
+            for (const r of roots) {
+              walkNode(r, true);
+              walkNode(r.TopSource, false);
+              walkNode(r.BottomSource, false);
+            }
+            return result;
+          };
+
+          const bracketMatches = extractMatches(sundayPlay.Roots || []);
+          // Sort by scheduled time
+          bracketMatches.sort((a: object, b: object) => {
+            const aTime = (a as { time: string }).time;
+            const bTime = (b as { time: string }).time;
+            return aTime.localeCompare(bTime);
+          });
+
+          activeSundayBracket = {
+            bracketName: sundayPlay.FullName,
+            completeName: sundayPlay.CompleteFullName,
+            courts: (sundayPlay.Courts || []).map((c: { Name: string }) => c.Name),
+            matches: bracketMatches,
+            finishRange: sundayFinishRanges[sundayPlay.FullName] || null,
+          };
+        }
+      }
+    }
     const sundayBrackets: object[] = [];
     if (day2) {
       for (const play of day2) {
@@ -589,6 +666,7 @@ export async function GET(req: Request) {
       workAssignments,
       futurePaths,
       sundayBrackets,
+      activeSundayBracket,
     });
 
   } catch (e) {
