@@ -592,7 +592,10 @@ export async function GET(req: Request) {
               weWon: m.HasScores ? (isUs1 ? m.FirstTeamWon : m.SecondTeamWon) : null,
               sets,
               depth,
-              isWinnersSide: !t1name.toLowerCase().includes('loser') && !t2name.toLowerCase().includes('loser'),
+              // A match is on the winners path if neither team slot references a "Loser"
+              isWinnersSide: !t1name.includes('Loser') && !t2name.includes('Loser'),
+              topSourceId: node.TopSource?.Match?.MatchId || null,
+              bottomSourceId: node.BottomSource?.Match?.MatchId || null,
             };
             collectMatches(node.TopSource, depth + 1);
             collectMatches(node.BottomSource, depth + 1);
@@ -604,27 +607,74 @@ export async function GET(req: Request) {
             collectMatches(r.BottomSource, 1);
           }
 
-          // Group into rounds (depth 3=R1, depth 2=R2, depth 1=R3, depth 0=R4/Finals)
           const maxDepth = Math.max(...Object.values(allMatches).map((m: { depth: number }) => m.depth));
+
+          // --- Find the championship match ---
+          // It's the depth-0 match whose inputs trace back through pure winners (no losers refs anywhere)
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const rounds: { roundNum: number; label: string; matches: any[] }[] = [];
-          for (let d = maxDepth; d >= 0; d--) {
-            const roundMatches = Object.values(allMatches)
-              .filter((m: { depth: number }) => m.depth === d)
-              .sort((a: { time: string }, b: { time: string }) => a.time.localeCompare(b.time));
-            if (roundMatches.length === 0) continue;
-            const roundNum = maxDepth - d + 1;
-            const label = d === 0
-              ? (roundMatches.length <= 2 ? 'Finals' : `Round ${roundNum}`)
-              : `Round ${roundNum}`;
-            rounds.push({ roundNum, label, matches: roundMatches });
+          const isPureWinnersMatch = (mid: number): boolean => {
+            const m = allMatches[mid];
+            if (!m) return false;
+            if (m.team1.includes('Loser') || m.team2.includes('Loser')) return false;
+            const topOk = !m.topSourceId || isPureWinnersMatch(m.topSourceId);
+            const botOk = !m.bottomSourceId || isPureWinnersMatch(m.bottomSourceId);
+            return topOk && botOk;
+          };
+
+          // Trace back from championship to build the winners ladder
+          const winnersLadder: number[][] = []; // each entry = array of matchIds at that stage
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const champMatch = Object.values(allMatches).find((m: any) => m.depth === 0 && isPureWinnersMatch(m.matchId));
+
+          if (champMatch) {
+            // BFS backward from championship
+            let currentLevel: number[] = [champMatch.matchId];
+            while (currentLevel.length > 0) {
+              winnersLadder.unshift(currentLevel); // prepend (round 1 first)
+              const nextLevel: number[] = [];
+              for (const mid of currentLevel) {
+                const m = allMatches[mid];
+                if (m?.topSourceId && allMatches[m.topSourceId] && isPureWinnersMatch(m.topSourceId)) nextLevel.push(m.topSourceId);
+                if (m?.bottomSourceId && allMatches[m.bottomSourceId] && isPureWinnersMatch(m.bottomSourceId)) nextLevel.push(m.bottomSourceId);
+              }
+              currentLevel = nextLevel;
+            }
           }
+
+          // Label the winners ladder stages by size
+          const stageLabels = (totalRounds: number, stageIdx: number): string => {
+            const stagesFromFinal = totalRounds - 1 - stageIdx;
+            if (stagesFromFinal === 0) return 'Championship';
+            if (stagesFromFinal === 1) return 'Semifinals';
+            if (stagesFromFinal === 2) return 'Quarterfinals';
+            const teamsInStage = Math.pow(2, stagesFromFinal + 1);
+            return `Round of ${teamsInStage}`;
+          };
+
+          // Build winners rounds
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const winnersRounds: { label: string; isChampPath: true; matches: any[] }[] = winnersLadder.map((mids, idx) => ({
+            label: stageLabels(winnersLadder.length, idx),
+            isChampPath: true,
+            matches: mids
+              .map((mid: number) => allMatches[mid])
+              .filter(Boolean)
+              .sort((a: { time: string }, b: { time: string }) => a.time.localeCompare(b.time)),
+          }));
+
+          // All non-championship-path matches = placement
+          const champMatchIds = new Set(winnersLadder.flat());
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const placementMatches = Object.values(allMatches)
+            .filter((m: any) => !champMatchIds.has(m.matchId))
+            .sort((a: { time: string }, b: { time: string }) => a.time.localeCompare(b.time));
 
           activeSundayBracket = {
             bracketName: sundayPlay.FullName,
             completeName: sundayPlay.CompleteFullName,
             courts: (sundayPlay.Courts || []).map((c: { Name: string }) => c.Name),
-            rounds,
+            winnersRounds,
+            placementMatches,
             totalMatches: Object.keys(allMatches).length,
             finishRange: sundayFinishRanges[sundayPlay.FullName] || null,
           };

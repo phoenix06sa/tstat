@@ -32,11 +32,12 @@ interface ActiveBracketMatch {
   sets: SetScore[]; depth: number; isWinnersSide: boolean;
 }
 interface ActiveBracketRound {
-  roundNum: number; label: string; matches: ActiveBracketMatch[];
+  label: string; isChampPath: boolean; matches: ActiveBracketMatch[];
 }
 interface ActiveSundayBracket {
   bracketName: string; completeName: string; courts: string[];
-  rounds: ActiveBracketRound[];
+  winnersRounds: ActiveBracketRound[];
+  placementMatches: ActiveBracketMatch[];
   totalMatches: number;
   finishRange: { best: string; worst: string; note: string } | null;
 }
@@ -472,50 +473,35 @@ export default function Home() {
                     )}
                   </div>
 
-                  {/* Rounds */}
-                  {data.activeSundayBracket.rounds.map((round, ri) => {
-                    const winnerMatches = round.matches.filter(m => m.isWinnersSide);
-                    const consolationMatches = round.matches.filter(m => !m.isWinnersSide);
-                    return (
+                  {/* Championship path — Round of 16 → Quarters → Semis → Championship */}
+                  {data.activeSundayBracket.winnersRounds.map((round, ri) => (
                     <div key={ri}>
-                      <div className="text-xs text-zinc-600 uppercase tracking-widest mb-2 px-1">
-                        {round.label}
+                      <div className="flex items-center gap-2 mb-2 px-1">
+                        <div className={`h-px flex-1 ${ri === data.activeSundayBracket!.winnersRounds.length - 1 ? 'bg-yellow-700' : 'bg-emerald-900'}`} />
+                        <span className={`text-xs font-bold uppercase tracking-widest ${ri === data.activeSundayBracket!.winnersRounds.length - 1 ? 'text-yellow-500' : 'text-emerald-700'}`}>
+                          {ri === data.activeSundayBracket!.winnersRounds.length - 1 ? '🏆 ' : ''}{round.label}
+                        </span>
+                        <div className={`h-px flex-1 ${ri === data.activeSundayBracket!.winnersRounds.length - 1 ? 'bg-yellow-700' : 'bg-emerald-900'}`} />
                       </div>
-
-                      {/* Winners path matches */}
-                      {winnerMatches.length > 0 && (
-                        <div className="mb-2">
-                          {winnerMatches.length > 0 && consolationMatches.length > 0 && (
-                            <div className="flex items-center gap-2 mb-1.5 px-1">
-                              <div className="h-px flex-1 bg-emerald-900" />
-                              <span className="text-xs text-emerald-600 font-semibold">↑ Winners Path</span>
-                              <div className="h-px flex-1 bg-emerald-900" />
-                            </div>
-                          )}
-                          <div className="space-y-2">
-                            {winnerMatches.map((m, mi) => renderMatch(m, mi, data.teamCode))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Consolation path matches */}
-                      {consolationMatches.length > 0 && (
-                        <div>
-                          {winnerMatches.length > 0 && consolationMatches.length > 0 && (
-                            <div className="flex items-center gap-2 mb-1.5 mt-3 px-1">
-                              <div className="h-px flex-1 bg-zinc-700" />
-                              <span className="text-xs text-zinc-600 font-semibold">↓ Consolation</span>
-                              <div className="h-px flex-1 bg-zinc-700" />
-                            </div>
-                          )}
-                          <div className="space-y-2">
-                            {consolationMatches.map((m, mi) => renderMatch(m, mi, data.teamCode))}
-                          </div>
-                        </div>
-                      )}
+                      <div className="space-y-2 mb-4">
+                        {round.matches.map((m, mi) => renderMatch(m, mi, data.teamCode))}
+                      </div>
                     </div>
-                    );
-                  })}
+                  ))}
+
+                  {/* Placement matches — shown collapsed at the bottom */}
+                  {data.activeSundayBracket.placementMatches.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-2 px-1">
+                        <div className="h-px flex-1 bg-zinc-800" />
+                        <span className="text-xs text-zinc-600 font-semibold uppercase tracking-widest">Placement Matches (3rd–16th)</span>
+                        <div className="h-px flex-1 bg-zinc-800" />
+                      </div>
+                      <div className="space-y-2">
+                        {data.activeSundayBracket.placementMatches.map((m, mi) => renderMatch(m, mi, data.teamCode))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
