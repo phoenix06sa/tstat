@@ -411,7 +411,13 @@ The most complex UI challenge was making the Sunday bracket readable on a phone.
 
 The bracket data comes from `/plays/{date}` as a nested `Roots` tree. Each root node has `TopSource` and `BottomSource` that recursively trace back to the first-round matchups. We collect all unique matches by MatchId, tagged with a depth level (depth 0 = final round, max_depth = round 1).
 
-**The key insight:** find the championship match by recursively checking if a match's full ancestor tree contains zero "Loser of..." references — that gives you the pure winners path. Then BFS backward from championship → Semis → Quarters → Round of 16.
+**The key insight for finding the championship path:** recursively check if a match's full ancestor tree contains zero "Loser of..." references — that gives you the pure winners path. Then BFS backward from championship → Semis → Quarters → Round of 16.
+
+### Team name resolution across multiple rounds
+
+AES populates team slots one round ahead. After Round of 16 is played, Quarterfinal nodes get `FirstTeam`/`SecondTeam` objects but `HasScores=false`. After Quarterfinals, Semifinal slots still say "Winner of Match 9" with null `FirstTeam`. This means a single-level lookup isn't enough.
+
+**Solution:** a second-pass iterative resolution loop after collecting all matches. For any match still showing "Winner of...", check if the source match has `HasScores=true`, then use that match's resolved winner. Loop until no more changes (handles R16→QF→Semi→Championship chains in 3-4 iterations). This guarantees all rounds fill in correctly as the day progresses, automatically, on every 90-second refresh.
 
 Everything NOT on that path = placement matches (3rd–16th place). Those show separately at the bottom.
 

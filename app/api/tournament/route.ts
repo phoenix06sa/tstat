@@ -654,8 +654,40 @@ export async function GET(req: Request) {
             collectMatches(r.TopSource, 1);
             collectMatches(r.BottomSource, 1);
           }
-
-          const maxDepth = Math.max(...Object.values(allMatches).map((m: { depth: number }) => m.depth));
+          // Second pass: resolve any remaining "Winner of..." slots using already-resolved match data
+          // This handles multi-level chains (Championship needs Semi winner, Semi needs QF winner, etc.)
+          let changed = true;
+          while (changed) {
+            changed = false;
+            for (const mid of Object.keys(allMatches)) {
+              const match = allMatches[Number(mid)];
+              // Try to resolve team1 from topSource
+              if (match.resolvedTeam1.startsWith('Winner of') && match.topSourceId) {
+                const src = allMatches[match.topSourceId];
+                if (src?.hasScores) {
+                  const winner = src.team1Won ? (src.resolvedTeam1 || src.team1) : (src.resolvedTeam2 || src.team2);
+                  if (winner && !winner.startsWith('Winner of')) {
+                    match.resolvedTeam1 = winner;
+                    changed = true;
+                  }
+                } else if (src && !src.resolvedTeam1.startsWith('Winner of') && !src.resolvedTeam2.startsWith('Winner of')) {
+                  // Source has resolved teams but not played yet — show as upcoming
+                  // (leave as-is, will resolve once scored)
+                }
+              }
+              // Try to resolve team2 from bottomSource
+              if (match.resolvedTeam2.startsWith('Winner of') && match.bottomSourceId) {
+                const src = allMatches[match.bottomSourceId];
+                if (src?.hasScores) {
+                  const winner = src.team1Won ? (src.resolvedTeam1 || src.team1) : (src.resolvedTeam2 || src.team2);
+                  if (winner && !winner.startsWith('Winner of')) {
+                    match.resolvedTeam2 = winner;
+                    changed = true;
+                  }
+                }
+              }
+            }
+          }
 
           // --- Find the championship match ---
           // It's the depth-0 match whose inputs trace back through pure winners (no losers refs anywhere)
