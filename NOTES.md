@@ -458,6 +458,29 @@ The `/api/teams` endpoint worked on Netlify while `/api/tournament` failed — w
 
 ---
 
+## What Was Removed / Simplified
+
+**"Sunday Final Brackets" overview section** — removed. This was an early placeholder that listed all 13 Sunday bracket names and showed team seedings when populated. It was superseded entirely by the active Sunday bracket view (championship path display). AES also clears the `Teams` arrays from bracket plays after the tournament, so it would have been empty after the fact anyway. The active Sunday bracket section — which shows Round of 16 → Quarters → Semis → Championship with actual match cards, scores, and placement matches — does everything that section was supposed to do, and does it better.
+
+**Lesson:** build the overview placeholder early to understand the data, replace it with the real view once you understand the structure well enough to build it properly.
+
+---
+
+## Final Page Structure (as of end of 2026 Lone Star Regionals)
+
+Sections in order, top to bottom:
+
+1. **Sticky header** — team name, pool, team dropdown, refresh button, last-updated timestamp
+2. **Event info** — tournament name, venue, dates, division
+3. **Pool standings** — table with W/L, sets, rank, tiebreaker note for tied teams
+4. **Pool matches** — match cards with scores, WIN/LOSS badges (from `/schedule/past` + `/schedule/current`)
+5. **Work/ref assignments** — from `/schedule/work`
+6. **Bracket play** — 4 cards (one per pool finish position), showing team at that rank, bracket name, opponent, scores if played, and Win/Lose → Sunday destination with finish range out of 64
+7. **Sunday bracket** — championship path (Round of 16 → Quarters → Semis → 🏆 Championship) + placement matches below. Only appears once team is in a Sunday bracket (`/schedule/current` play type = 1 pointing to a day2 bracket)
+8. **Footer** — team code, division, link to previous tournament page
+
+---
+
 ## 2026 Lone Star Regionals — Our Results
 
 Team: Austin Skyline 14 Black (g14askyl2ls)
