@@ -628,7 +628,19 @@ export async function GET(req: Request) {
               weWon: m.HasScores ? (isUs1 ? m.FirstTeamWon : m.SecondTeamWon) : null,
               sets,
               depth,
-              // A match is on the winners path if neither team slot references a "Loser"
+              // Resolve actual team names from source matches if slots still say "Winner of..."
+              resolvedTeam1: t1name.startsWith('Winner of') && node.TopSource?.Match?.HasScores
+                ? (() => {
+                    const sm = node.TopSource.Match;
+                    return sm.FirstTeamWon ? (sm.FirstTeam?.Name || sm.FirstTeamText || t1name) : (sm.SecondTeam?.Name || sm.SecondTeamText || t1name);
+                  })()
+                : t1name,
+              resolvedTeam2: t2name.startsWith('Winner of') && node.BottomSource?.Match?.HasScores
+                ? (() => {
+                    const sm = node.BottomSource.Match;
+                    return sm.FirstTeamWon ? (sm.FirstTeam?.Name || sm.FirstTeamText || t2name) : (sm.SecondTeam?.Name || sm.SecondTeamText || t2name);
+                  })()
+                : t2name,
               isWinnersSide: !t1name.includes('Loser') && !t2name.includes('Loser'),
               topSourceId: node.TopSource?.Match?.MatchId || null,
               bottomSourceId: node.BottomSource?.Match?.MatchId || null,

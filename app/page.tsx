@@ -26,6 +26,7 @@ interface FuturePath {
 interface ActiveBracketMatch {
   matchId: number; matchName: string; time: string; court: string;
   team1: string; team2: string; team1code: string; team2code: string;
+  resolvedTeam1: string; resolvedTeam2: string;
   hasUs: boolean; hasScores: boolean;
   team1Won: boolean; team2Won: boolean;
   weWon: boolean | null;
@@ -150,28 +151,32 @@ export default function Home() {
   }
 
   const renderMatch = (m: ActiveBracketMatch, key: number, teamCode: string) => {
+    const displayTeam1 = m.resolvedTeam1 || m.team1;
+    const displayTeam2 = m.resolvedTeam2 || m.team2;
+    const isPending1 = !m.hasScores && displayTeam1.startsWith('Winner of');
+    const isPending2 = !m.hasScores && displayTeam2.startsWith('Winner of');
     const borderColor = m.hasUs
       ? m.hasScores
         ? m.weWon ? 'border-emerald-700' : 'border-red-800'
         : 'border-yellow-700'
       : m.isWinnersSide ? 'border-zinc-800' : 'border-zinc-700/50';
-    const winnerTeam = m.hasScores ? (m.team1Won ? m.team1 : m.team2) : null;
+    const winnerTeam = m.hasScores ? (m.team1Won ? displayTeam1 : displayTeam2) : null;
     return (
       <div key={key} className={`bg-zinc-900 rounded-xl border px-4 py-3 ${borderColor}`}>
         <div className="flex items-center justify-between gap-2 mb-1">
           <span className="text-xs text-zinc-600">{m.matchName}</span>
           <span className="text-xs text-zinc-600">{m.time} {m.court}</span>
         </div>
-        <div className={`flex items-center justify-between py-1 ${m.team1code.toLowerCase() === teamCode ? 'text-yellow-300' : m.hasScores && !m.team1Won ? 'text-zinc-600' : 'text-zinc-200'}`}>
+        <div className={`flex items-center justify-between py-1 ${m.team1code.toLowerCase() === teamCode ? 'text-yellow-300' : m.hasScores && !m.team1Won ? 'text-zinc-600' : isPending1 ? 'text-zinc-600 italic' : 'text-zinc-200'}`}>
           <span className="text-sm font-medium">
-            {m.team1code.toLowerCase() === teamCode ? '★ ' : ''}{m.team1}
+            {m.team1code.toLowerCase() === teamCode ? '★ ' : ''}{displayTeam1}
           </span>
           {m.hasScores && m.team1Won && <span className="text-xs bg-emerald-900 text-emerald-300 px-2 py-0.5 rounded font-bold">WIN</span>}
         </div>
         <div className="border-t border-zinc-800 my-1" />
-        <div className={`flex items-center justify-between py-1 ${m.team2code.toLowerCase() === teamCode ? 'text-yellow-300' : m.hasScores && !m.team2Won ? 'text-zinc-600' : 'text-zinc-200'}`}>
+        <div className={`flex items-center justify-between py-1 ${m.team2code.toLowerCase() === teamCode ? 'text-yellow-300' : m.hasScores && !m.team2Won ? 'text-zinc-600' : isPending2 ? 'text-zinc-600 italic' : 'text-zinc-200'}`}>
           <span className="text-sm font-medium">
-            {m.team2code.toLowerCase() === teamCode ? '★ ' : ''}{m.team2}
+            {m.team2code.toLowerCase() === teamCode ? '★ ' : ''}{displayTeam2}
           </span>
           {m.hasScores && m.team2Won && <span className="text-xs bg-emerald-900 text-emerald-300 px-2 py-0.5 rounded font-bold">WIN</span>}
         </div>
