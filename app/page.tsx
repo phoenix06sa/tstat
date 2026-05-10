@@ -144,6 +144,49 @@ export default function Home() {
     poolGroups[t.pool].push(t);
   }
 
+  const renderMatch = (m: ActiveBracketMatch, key: number, teamCode: string) => {
+    const borderColor = m.hasUs
+      ? m.hasScores
+        ? m.weWon ? 'border-emerald-700' : 'border-red-800'
+        : 'border-yellow-700'
+      : m.isWinnersSide ? 'border-zinc-800' : 'border-zinc-700/50';
+    const winnerTeam = m.hasScores ? (m.team1Won ? m.team1 : m.team2) : null;
+    return (
+      <div key={key} className={`bg-zinc-900 rounded-xl border px-4 py-3 ${borderColor}`}>
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <span className="text-xs text-zinc-600">{m.matchName}</span>
+          <span className="text-xs text-zinc-600">{m.time} {m.court}</span>
+        </div>
+        <div className={`flex items-center justify-between py-1 ${m.team1code.toLowerCase() === teamCode ? 'text-yellow-300' : m.hasScores && !m.team1Won ? 'text-zinc-600' : 'text-zinc-200'}`}>
+          <span className="text-sm font-medium">
+            {m.team1code.toLowerCase() === teamCode ? '★ ' : ''}{m.team1}
+          </span>
+          {m.hasScores && m.team1Won && <span className="text-xs bg-emerald-900 text-emerald-300 px-2 py-0.5 rounded font-bold">WIN</span>}
+        </div>
+        <div className="border-t border-zinc-800 my-1" />
+        <div className={`flex items-center justify-between py-1 ${m.team2code.toLowerCase() === teamCode ? 'text-yellow-300' : m.hasScores && !m.team2Won ? 'text-zinc-600' : 'text-zinc-200'}`}>
+          <span className="text-sm font-medium">
+            {m.team2code.toLowerCase() === teamCode ? '★ ' : ''}{m.team2}
+          </span>
+          {m.hasScores && m.team2Won && <span className="text-xs bg-emerald-900 text-emerald-300 px-2 py-0.5 rounded font-bold">WIN</span>}
+        </div>
+        {m.hasScores && m.sets.length > 0 && (
+          <div className="flex gap-2 mt-2 pt-2 border-t border-zinc-800">
+            {m.sets.map((s, si) => (
+              <span key={si} className="text-xs font-mono text-zinc-500">
+                {s.us !== null ? `${s.us}-${s.them}` : `${(s as unknown as {s1:number}).s1}-${(s as unknown as {s2:number}).s2}`}
+              </span>
+            ))}
+            {winnerTeam && <span className="text-xs text-zinc-600 ml-auto">→ {winnerTeam}</span>}
+          </div>
+        )}
+        {!m.hasScores && m.hasUs && (
+          <div className="mt-1 text-xs text-yellow-600">↑ Our match</div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans">
       {/* Header */}
@@ -430,60 +473,49 @@ export default function Home() {
                   </div>
 
                   {/* Rounds */}
-                  {data.activeSundayBracket.rounds.map((round, ri) => (
+                  {data.activeSundayBracket.rounds.map((round, ri) => {
+                    const winnerMatches = round.matches.filter(m => m.isWinnersSide);
+                    const consolationMatches = round.matches.filter(m => !m.isWinnersSide);
+                    return (
                     <div key={ri}>
                       <div className="text-xs text-zinc-600 uppercase tracking-widest mb-2 px-1">
                         {round.label}
                       </div>
-                      <div className="space-y-2">
-                        {round.matches.map((m, mi) => {
-                          const borderColor = m.hasUs
-                            ? m.hasScores
-                              ? m.weWon ? 'border-emerald-700' : 'border-red-800'
-                              : 'border-yellow-700'
-                            : 'border-zinc-800';
-                          const winnerTeam = m.hasScores ? (m.team1Won ? m.team1 : m.team2) : null;
-                          return (
-                            <div key={mi} className={`bg-zinc-900 rounded-xl border px-4 py-3 ${borderColor}`}>
-                              <div className="flex items-center justify-between gap-2 mb-1">
-                                <span className="text-xs text-zinc-600">{m.matchName}</span>
-                                <span className="text-xs text-zinc-600">{m.time} {m.court}</span>
-                              </div>
-                              {/* Team 1 */}
-                              <div className={`flex items-center justify-between py-1 ${m.team1code.toLowerCase() === data.teamCode ? 'text-yellow-300' : m.hasScores && !m.team1Won ? 'text-zinc-600' : 'text-zinc-200'}`}>
-                                <span className="text-sm font-medium">
-                                  {m.team1code.toLowerCase() === data.teamCode ? '★ ' : ''}{m.team1}
-                                </span>
-                                {m.hasScores && m.team1Won && <span className="text-xs bg-emerald-900 text-emerald-300 px-2 py-0.5 rounded font-bold">WIN</span>}
-                              </div>
-                              <div className="border-t border-zinc-800 my-1" />
-                              {/* Team 2 */}
-                              <div className={`flex items-center justify-between py-1 ${m.team2code.toLowerCase() === data.teamCode ? 'text-yellow-300' : m.hasScores && !m.team2Won ? 'text-zinc-600' : 'text-zinc-200'}`}>
-                                <span className="text-sm font-medium">
-                                  {m.team2code.toLowerCase() === data.teamCode ? '★ ' : ''}{m.team2}
-                                </span>
-                                {m.hasScores && m.team2Won && <span className="text-xs bg-emerald-900 text-emerald-300 px-2 py-0.5 rounded font-bold">WIN</span>}
-                              </div>
-                              {/* Set scores */}
-                              {m.hasScores && m.sets.length > 0 && (
-                                <div className="flex gap-2 mt-2 pt-2 border-t border-zinc-800">
-                                  {m.sets.map((s, si) => (
-                                    <span key={si} className="text-xs font-mono text-zinc-500">
-                                      {s.us !== null ? `${s.us}-${s.them}` : `${(s as unknown as {s1:number}).s1}-${(s as unknown as {s2:number}).s2}`}
-                                    </span>
-                                  ))}
-                                  {winnerTeam && <span className="text-xs text-zinc-600 ml-auto">→ {winnerTeam}</span>}
-                                </div>
-                              )}
-                              {!m.hasScores && m.hasUs && (
-                                <div className="mt-1 text-xs text-yellow-600">↑ Our match</div>
-                              )}
+
+                      {/* Winners path matches */}
+                      {winnerMatches.length > 0 && (
+                        <div className="mb-2">
+                          {winnerMatches.length > 0 && consolationMatches.length > 0 && (
+                            <div className="flex items-center gap-2 mb-1.5 px-1">
+                              <div className="h-px flex-1 bg-emerald-900" />
+                              <span className="text-xs text-emerald-600 font-semibold">↑ Winners Path</span>
+                              <div className="h-px flex-1 bg-emerald-900" />
                             </div>
-                          );
-                        })}
-                      </div>
+                          )}
+                          <div className="space-y-2">
+                            {winnerMatches.map((m, mi) => renderMatch(m, mi, data.teamCode))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Consolation path matches */}
+                      {consolationMatches.length > 0 && (
+                        <div>
+                          {winnerMatches.length > 0 && consolationMatches.length > 0 && (
+                            <div className="flex items-center gap-2 mb-1.5 mt-3 px-1">
+                              <div className="h-px flex-1 bg-zinc-700" />
+                              <span className="text-xs text-zinc-600 font-semibold">↓ Consolation</span>
+                              <div className="h-px flex-1 bg-zinc-700" />
+                            </div>
+                          )}
+                          <div className="space-y-2">
+                            {consolationMatches.map((m, mi) => renderMatch(m, mi, data.teamCode))}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
