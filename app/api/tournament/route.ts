@@ -551,71 +551,81 @@ export async function GET(req: Request) {
         // Find this bracket in day2
         const sundayPlay = day2?.find((p: { FullName: string }) => p.FullName === currentPlay.FullName);
         if (sundayPlay) {
-          // Walk the Roots tree to get all matches with times, opponents, scores
+          // Collect ALL unique matches from the bracket tree, tagged by round depth
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const extractMatches = (roots: any[]): object[] => {
-            const result: object[] = [];
-            const seenIds = new Set<number>();
+          const allMatches: Record<number, any> = {};
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const collectMatches = (node: any, depth: number) => {
+            if (!node) return;
+            const m = node.Match || {};
+            const mid = m.MatchId;
+            if (!mid || allMatches[mid]) return;
+            const t1 = m.FirstTeam;
+            const t2 = m.SecondTeam;
+            const t1name = t1?.Name || m.FirstTeamText || 'TBD';
+            const t2name = t2?.Name || m.SecondTeamText || 'TBD';
+            const t1code = t1?.Code || '';
+            const t2code = t2?.Code || '';
+            const isUs1 = t1code.toLowerCase() === teamCode.toLowerCase();
+            const isUs2 = t2code.toLowerCase() === teamCode.toLowerCase();
+            const teamIsFirst = isUs1;
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const walkNode = (node: any, isFinal: boolean) => {
-              if (!node) return;
-              const m = node.Match || {};
-              if (!m.MatchId) return;
-              if (seenIds.has(m.MatchId)) return;
-              seenIds.add(m.MatchId);
-              const t1 = m.FirstTeam;
-              const t2 = m.SecondTeam;
-              const t1name = t1?.Name || m.FirstTeamText || '?';
-              const t2name = t2?.Name || m.SecondTeamText || '?';
-              const t1code = t1?.Code || '';
-              const t2code = t2?.Code || '';
-              const isUs1 = t1code.toLowerCase() === teamCode.toLowerCase();
-              const isUs2 = t2code.toLowerCase() === teamCode.toLowerCase();
-              const teamIsFirst = isUs1;
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const sets = (m.Sets || []).map((s: any) => ({
-                us: teamIsFirst ? s.FirstTeamScore : s.SecondTeamScore,
-                them: teamIsFirst ? s.SecondTeamScore : s.FirstTeamScore,
-              })).filter((s: { us: number | null }) => s.us !== null);
-              const ourWon = m.HasScores ? (isUs1 ? m.FirstTeamWon : m.SecondTeamWon) : null;
-              result.push({
-                matchName: m.FullName,
-                time: fmtTime(m.ScheduledStartDateTime),
-                court: m.Court?.Name || '',
-                team1: t1name,
-                team2: t2name,
-                team1code: t1code,
-                team2code: t2code,
-                hasUs: isUs1 || isUs2,
-                hasScores: m.HasScores || false,
-                weWon: ourWon,
-                sets,
-                isFinal,
-              });
-              walkNode(node.TopSource, false);
-              walkNode(node.BottomSource, false);
+            const sets = (m.Sets || []).map((s: any) => ({
+              us: teamIsFirst ? s.FirstTeamScore : s.SecondTeamScore,
+              them: teamIsFirst ? s.SecondTeamScore : s.FirstTeamScore,
+              s1: s.FirstTeamScore,
+              s2: s.SecondTeamScore,
+            })).filter((s: { s1: number | null }) => s.s1 !== null);
+            allMatches[mid] = {
+              matchId: mid,
+              matchName: m.FullName,
+              time: fmtTime(m.ScheduledStartDateTime),
+              court: m.Court?.Name || '',
+              team1: t1name,
+              team2: t2name,
+              team1code: t1code,
+              team2code: t2code,
+              hasUs: isUs1 || isUs2,
+              hasScores: m.HasScores || false,
+              team1Won: m.FirstTeamWon || false,
+              team2Won: m.SecondTeamWon || false,
+              weWon: m.HasScores ? (isUs1 ? m.FirstTeamWon : m.SecondTeamWon) : null,
+              sets,
+              depth,
+              isWinnersSide: !t1name.toLowerCase().includes('loser') && !t2name.toLowerCase().includes('loser'),
             };
-            for (const r of roots) {
-              walkNode(r, true);
-              walkNode(r.TopSource, false);
-              walkNode(r.BottomSource, false);
-            }
-            return result;
+            collectMatches(node.TopSource, depth + 1);
+            collectMatches(node.BottomSource, depth + 1);
           };
 
-          const bracketMatches = extractMatches(sundayPlay.Roots || []);
-          // Sort by scheduled time
-          bracketMatches.sort((a: object, b: object) => {
-            const aTime = (a as { time: string }).time;
-            const bTime = (b as { time: string }).time;
-            return aTime.localeCompare(bTime);
-          });
+          for (const r of (sundayPlay.Roots || [])) {
+            collectMatches(r, 0);
+            collectMatches(r.TopSource, 1);
+            collectMatches(r.BottomSource, 1);
+          }
+
+          // Group into rounds (depth 3=R1, depth 2=R2, depth 1=R3, depth 0=R4/Finals)
+          const maxDepth = Math.max(...Object.values(allMatches).map((m: { depth: number }) => m.depth));
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const rounds: { roundNum: number; label: string; matches: any[] }[] = [];
+          for (let d = maxDepth; d >= 0; d--) {
+            const roundMatches = Object.values(allMatches)
+              .filter((m: { depth: number }) => m.depth === d)
+              .sort((a: { time: string }, b: { time: string }) => a.time.localeCompare(b.time));
+            if (roundMatches.length === 0) continue;
+            const roundNum = maxDepth - d + 1;
+            const label = d === 0
+              ? (roundMatches.length <= 2 ? 'Finals' : `Round ${roundNum}`)
+              : `Round ${roundNum}`;
+            rounds.push({ roundNum, label, matches: roundMatches });
+          }
 
           activeSundayBracket = {
             bracketName: sundayPlay.FullName,
             completeName: sundayPlay.CompleteFullName,
             courts: (sundayPlay.Courts || []).map((c: { Name: string }) => c.Name),
-            matches: bracketMatches,
+            rounds,
+            totalMatches: Object.keys(allMatches).length,
             finishRange: sundayFinishRanges[sundayPlay.FullName] || null,
           };
         }
