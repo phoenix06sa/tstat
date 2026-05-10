@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+export const maxDuration = 30;
+
 const BASE = 'https://results.advancedeventsystems.com';
 const PREV_EVENT = 'PTAwMDAwNDIwNDA90';
 const PREV_DIV = '207190';
