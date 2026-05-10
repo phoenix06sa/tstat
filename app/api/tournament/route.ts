@@ -418,19 +418,55 @@ export async function GET(req: Request) {
           us: teamIsFirst ? s.FirstTeamScore : s.SecondTeamScore,
           them: teamIsFirst ? s.SecondTeamScore : s.FirstTeamScore,
         }));
-        // Sunday destinations with finish ranges
-        const winnerSunday = findSundayForChBrkt(brktShortName, 'Winner');
-        const loserSunday = findSundayForChBrkt(brktShortName, 'Loser');
+        // Sunday destinations — try ChBrkt tag first, fall back to team name search
+        const winnerSunday = findSundayForChBrkt(brktShortName, 'Winner')
+          || (() => {
+            // After bracket play, tags replaced with team names — find by winner's team text
+            if (brktMatch?.FirstTeam && brktMatch?.SecondTeam && brktHasScores) {
+              const winnerTeam = brktMatch.FirstTeamWon ? brktMatch.FirstTeam : brktMatch.SecondTeam;
+              const winnerText = `${winnerTeam.Name} (LS)`;
+              for (const b of day2) {
+                if (!b || typeof b !== 'object') continue;
+                const sources = extractAllSources(b);
+                if (sources.has(winnerText)) return { bracketName: b.FullName, teamCount: 0 };
+              }
+            }
+            return null;
+          })();
+
+        const loserSunday = findSundayForChBrkt(brktShortName, 'Loser')
+          || (() => {
+            if (brktMatch?.FirstTeam && brktMatch?.SecondTeam && brktHasScores) {
+              const loserTeam = brktMatch.FirstTeamWon ? brktMatch.SecondTeam : brktMatch.FirstTeam;
+              const loserText = `${loserTeam.Name} (LS)`;
+              for (const b of day2) {
+                if (!b || typeof b !== 'object') continue;
+                const sources = extractAllSources(b);
+                if (sources.has(loserText)) return { bracketName: b.FullName, teamCount: 0 };
+              }
+            }
+            return null;
+          })();
+
         const winRange = winnerSunday ? sundayFinishRanges[winnerSunday.bracketName] : null;
         const loseRange = loserSunday ? sundayFinishRanges[loserSunday.bracketName] : null;
-        const finishRange = [
-          winnerSunday
-            ? `Win -> ${winnerSunday.bracketName} · best ${winRange?.best ?? '?'}, worst ${winRange?.worst ?? '?'} of 64`
-            : 'Win -> TBD',
-          loserSunday
-            ? `Lose -> ${loserSunday.bracketName} · best ${loseRange?.best ?? '?'}, worst ${loseRange?.worst ?? '?'} of 64`
-            : 'Lose -> TBD',
-        ].join('\n');
+
+        // If bracket is already played, show actual result with destination
+        let finishRange: string;
+        if (brktHasScores && winnerSunday && loserSunday) {
+          const wonLine = `Win → ${winnerSunday.bracketName}${winRange ? ` · best ${winRange.best}, worst ${winRange.worst} of 64` : ''}`;
+          const lostLine = `Lose → ${loserSunday.bracketName}${loseRange ? ` · best ${loseRange.best}, worst ${loseRange.worst} of 64` : ''}`;
+          finishRange = [wonLine, lostLine].join('\n');
+        } else {
+          finishRange = [
+            winnerSunday
+              ? `Win → ${winnerSunday.bracketName} · best ${winRange?.best ?? '?'}, worst ${winRange?.worst ?? '?'} of 64`
+              : 'Win → TBD',
+            loserSunday
+              ? `Lose → ${loserSunday.bracketName} · best ${loseRange?.best ?? '?'}, worst ${loseRange?.worst ?? '?'} of 64`
+              : 'Lose → TBD',
+          ].join('\n');
+        }
 
         // Get match time/court from current bracket match or future API
         let court = '', time = '', workCourt = '', workTime = '';
