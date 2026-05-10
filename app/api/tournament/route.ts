@@ -224,25 +224,9 @@ export async function GET(req: Request) {
     }
 
     // --- Discover opponent pool and bracket paths from Saturday data ---
-    // future API gives 1st/2nd paths; extract bracket names and find opponent pools dynamically
     const brackets_sat = day1.filter((p: { PlayType: number }) => p.PlayType === 1);
-
-    // Build bracket-to-opponent-pool map
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const bracketOpponentPoolMap: Record<string, any> = {};
-    for (const pool of pools) {
-      const teams = pool.Teams || [];
-      if (!teams.length) continue;
-      const tid = teams[0].TeamId;
-      const pFuture = await aes(`/api/event/${EVENT}/division/${DIV}/team/${tid}/schedule/future`);
-      if (!pFuture) continue;
-      for (const f of pFuture) {
-        const brktName = f.NextPlay?.FullName;
-        const rank = f.PotentialRank;
-        if (!bracketOpponentPoolMap[brktName]) bracketOpponentPoolMap[brktName] = {};
-        bracketOpponentPoolMap[brktName][rank] = pool;
-      }
-    }
+    // Note: bracketOpponentPoolMap (which required 16 API calls) has been removed.
+    // We now find our pool's brackets directly from the Saturday bracket Roots by TeamCode.
 
     // --- Find 3rd/4th Sunday bracket info dynamically ---
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
