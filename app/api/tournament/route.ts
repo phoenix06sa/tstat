@@ -785,43 +785,57 @@ export async function GET(req: Request) {
       }
     }
 
-    // --- Final rank: derive from past matches ---
-    // AES doesn't expose a clean overallRank field after tournament ends.
-    // We derive from the last bracket played and wins/losses within that bracket.
-    let finalRank: string | null = null;
-    let finalBracket: string | null = null;
-    if (past && past.length > 0) {
-      const lastBlock = past[past.length - 1];
-      const lastPlay = lastBlock.Play?.FullName || '';
-      finalBracket = lastPlay;
-      const bracketBlocks = past.filter((b: { Play?: { Type?: number } }) => (b.Play?.Type ?? 0) === 1);
-      const bracketWins = bracketBlocks.filter((b: { Match?: { FirstTeamId?: number; FirstTeamWon?: boolean; SecondTeamWon?: boolean } }) => {
-        const m = b.Match || {};
-        const isF = m.FirstTeamId === Number(TEAM_ID);
-        return isF ? m.FirstTeamWon : m.SecondTeamWon;
-      }).length;
+    // --- Final standings: pull from Sunday plays RankText nodes ---
+    // Each completed bracket's nodes have a RankText field like "3 - Austin Skyline 14 Black (LS)"
+    // Gold bracket: 16 unique ranks (bracketRank == overallRank)
+    // Silver/Bronze/Flight: 4 brackets × 4 teams → tied groups at base + (bracketRank-1)*4
+    type FinalStanding = { overallRank: number; tied: boolean; teamName: string; teamCode: string; bracket: string; bracketRank: number; isUs: boolean };
+    let finalStandings: FinalStanding[] = [];
 
-      if (lastPlay.includes('Gold')) {
-        if (bracketWins === 4) finalRank = '1st';
-        else if (bracketWins === 3) finalRank = '2nd–4th';
-        else if (bracketWins === 2) finalRank = '5th–8th';
-        else if (bracketWins === 1) finalRank = '9th–12th';
-        else finalRank = '13th–16th';
-      } else if (lastPlay.includes('Silver')) {
-        // Silver A-D are the same tier (ranks 17-32). No 3rd place match within each bracket.
-        // Won final = ~17th-20th, lost final = ~21st-24th, lost semi = ~25th-32nd
-        if (bracketWins >= 2) finalRank = '17th–20th';
-        else if (bracketWins === 1) finalRank = '21st–24th';
-        else finalRank = '25th–32nd';
-      } else if (lastPlay.includes('Bronze')) {
-        if (bracketWins >= 2) finalRank = '33rd–36th';
-        else if (bracketWins === 1) finalRank = '37th–40th';
-        else finalRank = '41st–48th';
-      } else if (lastPlay.includes('Flight')) {
-        if (bracketWins >= 2) finalRank = '49th–52nd';
-        else if (bracketWins === 1) finalRank = '53rd–56th';
-        else finalRank = '57th–64th';
+    const collectRankNodes = (obj: unknown, bracketName: string, out: FinalStanding[]) => {
+      if (!obj || typeof obj !== 'object') return;
+      if (Array.isArray(obj)) { obj.forEach(i => collectRankNodes(i, bracketName, out)); return; }
+      const o = obj as Record<string, unknown>;
+      const rankText = o['RankText'];
+      if (typeof rankText === 'string' && rankText) {
+        const m = rankText.match(/^(\d+)\s*-\s*(.+)$/);
+        if (m) {
+          const bracketRank = parseInt(m[1]);
+          const teamName = m[2].trim().replace(/\s*\(LS\)\s*$/, '').trim();
+          let overallRank: number;
+          let tied: boolean;
+          if (bracketName.includes('Gold')) {
+            overallRank = bracketRank; tied = false;
+          } else if (bracketName.includes('Silver')) {
+            overallRank = 17 + (bracketRank - 1) * 4; tied = true;
+          } else if (bracketName.includes('Bronze')) {
+            overallRank = 33 + (bracketRank - 1) * 4; tied = true;
+          } else {
+            overallRank = 49 + (bracketRank - 1) * 4; tied = true;
+          }
+          out.push({ overallRank, tied, teamName, teamCode: '', bracket: bracketName, bracketRank, isUs: false });
+        }
       }
+      for (const v of Object.values(o)) collectRankNodes(v, bracketName, out);
+    };
+
+    if (Array.isArray(day2)) {
+      for (const play of day2) {
+        const name: string = play.FullName || '';
+        collectRankNodes(play, name, finalStandings);
+      }
+      // Deduplicate (same team can appear in multiple RankText nodes within a bracket)
+      const seen = new Set<string>();
+      finalStandings = finalStandings.filter(s => {
+        const key = `${s.overallRank}|${s.teamName}`;
+        if (seen.has(key)) return false;
+        seen.add(key); return true;
+      });
+      // Mark our team
+      finalStandings.forEach(s => {
+        s.isUs = s.teamName === TEAM_NAME || s.teamName.toLowerCase() === TEAM_NAME.toLowerCase();
+      });
+      finalStandings.sort((a, b) => a.overallRank - b.overallRank || a.bracket.localeCompare(b.bracket));
     }
 
     return NextResponse.json({
@@ -841,8 +855,7 @@ export async function GET(req: Request) {
       futurePaths,
       sundayBrackets,
       activeSundayBracket,
-      finalRank,
-      finalBracket,
+      finalStandings,
     });
 
   } catch (e) {

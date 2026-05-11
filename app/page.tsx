@@ -68,8 +68,7 @@ interface TournamentData {
   workAssignments: WorkAssignment[];
   futurePaths: FuturePath[];
   activeSundayBracket: ActiveSundayBracket | null;
-  finalRank: string | null;
-  finalBracket: string | null;
+  finalStandings: { overallRank: number; tied: boolean; teamName: string; bracket: string; bracketRank: number; isUs: boolean }[];
 }
 interface TeamOption {
   teamId: string; teamName: string; teamCode: string; club: string; pool: string;
@@ -517,17 +516,45 @@ export default function Home() {
               </div>
             )}
 
-            {/* Final Rank — shown at the bottom once all bracket play is complete */}
-            {data.finalRank && (
-              <div className="bg-zinc-900 rounded-xl border border-yellow-700 p-5">
-                <div className="text-xs text-yellow-500 uppercase tracking-widest mb-3">Final Standing</div>
-                <div className="flex items-baseline gap-3 mb-1">
-                  <div className="font-bold text-white text-4xl">{data.finalRank}</div>
-                  <div className="text-zinc-400 text-sm">out of 64</div>
+            {/* Final Standings — full 64-team list after all bracket play complete */}
+            {data.finalStandings && data.finalStandings.length > 0 && (
+              <div>
+                <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Final Standings</div>
+                <div className="bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-zinc-500 text-xs border-b border-zinc-800">
+                        <th className="text-center px-3 py-2 w-10">Rank</th>
+                        <th className="text-left px-3 py-2">Team</th>
+                        <th className="text-right px-3 py-2 hidden sm:table-cell text-zinc-600">Bracket</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.finalStandings.map((s, i) => (
+                        <tr key={i} className={`border-b border-zinc-800 last:border-0 ${s.isUs ? 'bg-yellow-950/40' : ''}`}>
+                          <td className="text-center px-3 py-2.5">
+                            <span className={`text-xs font-bold font-mono ${
+                              s.overallRank === 1 ? 'text-yellow-400' :
+                              s.overallRank <= 3 ? 'text-zinc-300' :
+                              s.isUs ? 'text-yellow-500' :
+                              'text-zinc-500'
+                            }`}>
+                              {s.tied ? 'T-' : ''}{s.overallRank}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <span className={`font-medium ${s.isUs ? 'text-yellow-300' : 'text-zinc-200'}`}>
+                              {s.isUs ? '★ ' : ''}{s.teamName}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5 text-right hidden sm:table-cell">
+                            <span className="text-zinc-600 text-xs">{s.bracket}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-                {data.finalBracket && (
-                  <div className="text-zinc-500 text-xs">{data.finalBracket}</div>
-                )}
               </div>
             )}
 
