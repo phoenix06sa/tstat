@@ -271,20 +271,6 @@ export default function Home() {
               <div className="text-zinc-400 text-sm">{data.dates} &middot; {data.division} Division</div>
             </div>
 
-            {/* Final rank banner — shown once all bracket play is complete */}
-            {data.finalRank && (
-              <div className="bg-zinc-900 rounded-xl border border-yellow-700 p-4">
-                <div className="text-xs text-yellow-500 uppercase tracking-widest mb-1">Final Result</div>
-                <div className="flex items-baseline gap-3">
-                  <div className="font-bold text-white text-3xl">{data.finalRank}</div>
-                  <div className="text-zinc-400 text-sm">out of 64</div>
-                </div>
-                {data.finalBracket && (
-                  <div className="text-zinc-500 text-xs mt-1">{data.finalBracket}</div>
-                )}
-              </div>
-            )}
-
             {/* Pool standings */}
             {data.poolStandings.length > 0 && (
               <div className="bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden">
@@ -528,6 +514,20 @@ export default function Home() {
                     </div>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* Final Rank — shown at the bottom once all bracket play is complete */}
+            {data.finalRank && (
+              <div className="bg-zinc-900 rounded-xl border border-yellow-700 p-5">
+                <div className="text-xs text-yellow-500 uppercase tracking-widest mb-3">Final Standing</div>
+                <div className="flex items-baseline gap-3 mb-1">
+                  <div className="font-bold text-white text-4xl">{data.finalRank}</div>
+                  <div className="text-zinc-400 text-sm">out of 64</div>
+                </div>
+                {data.finalBracket && (
+                  <div className="text-zinc-500 text-xs">{data.finalBracket}</div>
+                )}
               </div>
             )}
 
