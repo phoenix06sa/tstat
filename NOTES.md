@@ -487,7 +487,52 @@ Sections in order, top to bottom:
 
 ---
 
-## Why Our Finish Range Predictions Were Wrong (Important Lesson)
+## Goal: AES-Agnostic Tournament Tracker
+
+This site's purpose is to work for ANY AES tournament, not just this one 64-team 2-day format.
+The vision: paste any AES results URL, get a full picture of where a team is, where they're
+likely to land, who they'll probably play next — both mid-tournament and as a retrospective.
+
+### What we know is consistent across AES events
+- Core API endpoints (plays/{date}, schedule/past, schedule/current, schedule/future) work the same
+- Bracket tree structure (Roots → TopSource/BottomSource recursion) is universal
+- RankText nodes in completed brackets always give "N - TeamName (LS)" format
+- Match structure (FirstTeam, SecondTeam, HasScores, Sets, FirstTeamWon, etc.) is universal
+- Event + Division IDs are encoded in the URL (event/{EVENT}/divisions/{DIV}/overview)
+
+### What VARIES between tournaments
+- Number of days (1-day vs 2-day vs 3-day)
+- Number of teams (this was 64 — could be 32, 48, 96, etc.)
+- Bracket tier names (Gold/Silver/Bronze/Flight is NOT universal — other events use different names)
+- Number of tiers and how many teams per tier (depends on total team count)
+- Whether 3rd-place matches exist within each bracket (this Silver had none)
+- Whether all bracket play is on one day or split across days
+- Saturday evening challenge brackets may not exist — some events go straight pool→Sunday
+- Pool sizes can vary (we had pools of 4; some events have pools of 3, 5, or 6)
+- The "best/worst" finish ranges are specific to each event's bracket structure
+
+### Implications for future development
+- Hardcoded tier names (Gold/Silver/Bronze/Flight), date strings (2026-05-09/10), and
+  finish range maps need to be made dynamic before this can truly generalize
+- Tier name detection should inspect the bracket FullName strings from the plays API
+  rather than matching known strings
+- Finish range math (base + (bracketRank-1)*teamsPerBracket) needs the number of parallel
+  brackets per tier, which comes from the data (count how many Silver A/B/C/D exist)
+- Sunday bracket scores for "non-our-path" cards (3rd/4th place in pool) are found by
+  walking the day2 bracket tree — this works regardless of bracket name, as long as
+  we match by team name/code
+
+### When adding a new tournament
+Key questions to answer before building:
+1. How many days? Which day is pool play, which is bracket play?
+2. How many teams total and what are the bracket tier names?
+3. Is there a Saturday evening (challenge) bracket round or do teams go straight to Sunday?
+4. How many teams per bracket in each tier?
+5. Are there 3rd-place matches within each bracket (affects finish range precision)?
+
+---
+
+
 
 We initially predicted Silver = 17th–20th out of 64. Austin Skyline 14 Black actually finished ~25th. Here's why and what to fix next year.
 
