@@ -563,7 +563,8 @@ export async function GET(req: Request) {
           const targetCode = teamAtRank.TeamCode?.toLowerCase() || '';
           const bracketPlay = day2?.find((p: { FullName: string }) => p.FullName === sundayInfo.bracketName);
           if (bracketPlay) {
-            let bestMatch: { hasScores: boolean; t1Won: boolean; sets: { us: number | null; them: number | null }[] } | null = null;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            let bestMatch: any = null;
             let bestDepth = -1;
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const walkForTeam = (node: any, depth: number) => {
