@@ -581,13 +581,25 @@ export async function GET(req: Request) {
       }
     }
 
-    // --- Active Sunday bracket (if current play is a Sunday bracket) ---
+    // --- Active Sunday bracket (if current play is a Sunday bracket, OR tournament is over and last past play was a bracket) ---
     let activeSundayBracket: object | null = null;
+    // Determine which Sunday bracket to show
+    let sundayPlayName: string | null = null;
     if (current && current.length > 0) {
       const currentPlay = current[0]?.Play;
-      if (currentPlay?.Type === 1) {
-        // Find this bracket in day2
-        const sundayPlay = day2?.find((p: { FullName: string }) => p.FullName === currentPlay.FullName);
+      if (currentPlay?.Type === 1) sundayPlayName = currentPlay.FullName;
+    }
+    // Tournament over: fall back to the last bracket in past
+    if (!sundayPlayName && past && past.length > 0) {
+      for (let i = past.length - 1; i >= 0; i--) {
+        if (past[i]?.Play?.Type === 1) {
+          sundayPlayName = past[i].Play.FullName;
+          break;
+        }
+      }
+    }
+    if (sundayPlayName) {
+      const sundayPlay = day2?.find((p: { FullName: string }) => p.FullName === sundayPlayName);
         if (sundayPlay) {
           // Collect ALL unique matches from the bracket tree, tagged by round depth
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -761,7 +773,6 @@ export async function GET(req: Request) {
             finishRange: sundayFinishRanges[sundayPlay.FullName] || null,
           };
         }
-      }
     }
     const sundayBrackets: object[] = [];
     if (day2) {
