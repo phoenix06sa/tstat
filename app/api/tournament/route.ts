@@ -288,18 +288,20 @@ export async function GET(req: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sundayFinishRanges: Record<string, { best: string; worst: string; note: string }> = {
       'Gold Bracket':     { best: '1st',  worst: '16th', note: '16 teams — all Saturday bracket winners' },
-      'Silver A Bracket': { best: '17th', worst: '20th', note: '4 teams — Saturday bracket losers (group A)' },
-      'Silver B Bracket': { best: '17th', worst: '20th', note: '4 teams — Saturday bracket losers (group B)' },
-      'Silver C Bracket': { best: '17th', worst: '20th', note: '4 teams — Saturday bracket losers (group C)' },
-      'Silver D Bracket': { best: '17th', worst: '20th', note: '4 teams — Saturday bracket losers (group D)' },
-      'Bronze A Bracket': { best: '33rd', worst: '36th', note: '4 teams — 3rd place pool finishers (group A)' },
-      'Bronze B Bracket': { best: '33rd', worst: '36th', note: '4 teams — 3rd place pool finishers (group B)' },
-      'Bronze C Bracket': { best: '33rd', worst: '36th', note: '4 teams — 3rd place pool finishers (group C)' },
-      'Bronze D Bracket': { best: '33rd', worst: '36th', note: '4 teams — 3rd place pool finishers (group D)' },
-      'Flight 1A Bracket': { best: '49th', worst: '52nd', note: '4 teams — 4th place pool finishers (group A)' },
-      'Flight 1B Bracket': { best: '49th', worst: '52nd', note: '4 teams — 4th place pool finishers (group B)' },
-      'Flight 1C Bracket': { best: '49th', worst: '52nd', note: '4 teams — 4th place pool finishers (group C)' },
-      'Flight 1D Bracket': { best: '49th', worst: '52nd', note: '4 teams — 4th place pool finishers (group D)' },
+      // Silver A-D are the same tier: ranks 17-32 combined (4 brackets × 4 teams)
+      // No 3rd place match within each Silver bracket — semi-losers share 3rd/4th in bracket
+      'Silver A Bracket': { best: '17th', worst: '32nd', note: '4 teams — Saturday bracket losers. Win final ~17th, lose final ~21st, lose semi ~25th–32nd' },
+      'Silver B Bracket': { best: '17th', worst: '32nd', note: '4 teams — Saturday bracket losers. Win final ~17th, lose final ~21st, lose semi ~25th–32nd' },
+      'Silver C Bracket': { best: '17th', worst: '32nd', note: '4 teams — Saturday bracket losers. Win final ~17th, lose final ~21st, lose semi ~25th–32nd' },
+      'Silver D Bracket': { best: '17th', worst: '32nd', note: '4 teams — Saturday bracket losers. Win final ~17th, lose final ~21st, lose semi ~25th–32nd' },
+      'Bronze A Bracket': { best: '33rd', worst: '48th', note: '4 teams — 3rd place pool finishers' },
+      'Bronze B Bracket': { best: '33rd', worst: '48th', note: '4 teams — 3rd place pool finishers' },
+      'Bronze C Bracket': { best: '33rd', worst: '48th', note: '4 teams — 3rd place pool finishers' },
+      'Bronze D Bracket': { best: '33rd', worst: '48th', note: '4 teams — 3rd place pool finishers' },
+      'Flight 1A Bracket': { best: '49th', worst: '64th', note: '4 teams — 4th place pool finishers' },
+      'Flight 1B Bracket': { best: '49th', worst: '64th', note: '4 teams — 4th place pool finishers' },
+      'Flight 1C Bracket': { best: '49th', worst: '64th', note: '4 teams — 4th place pool finishers' },
+      'Flight 1D Bracket': { best: '49th', worst: '64th', note: '4 teams — 4th place pool finishers' },
     };
     // We always show all 4 paths based on pool finish, regardless of which play we're in now.
     // 1st/2nd go to Saturday evening challenge brackets -> then Sunday Gold/Silver
@@ -783,6 +785,45 @@ export async function GET(req: Request) {
       }
     }
 
+    // --- Final rank: derive from past matches ---
+    // AES doesn't expose a clean overallRank field after tournament ends.
+    // We derive from the last bracket played and wins/losses within that bracket.
+    let finalRank: string | null = null;
+    let finalBracket: string | null = null;
+    if (past && past.length > 0) {
+      const lastBlock = past[past.length - 1];
+      const lastPlay = lastBlock.Play?.FullName || '';
+      finalBracket = lastPlay;
+      const bracketBlocks = past.filter((b: { Play?: { Type?: number } }) => (b.Play?.Type ?? 0) === 1);
+      const bracketWins = bracketBlocks.filter((b: { Match?: { FirstTeamId?: number; FirstTeamWon?: boolean; SecondTeamWon?: boolean } }) => {
+        const m = b.Match || {};
+        const isF = m.FirstTeamId === Number(TEAM_ID);
+        return isF ? m.FirstTeamWon : m.SecondTeamWon;
+      }).length;
+
+      if (lastPlay.includes('Gold')) {
+        if (bracketWins === 4) finalRank = '1st';
+        else if (bracketWins === 3) finalRank = '2nd–4th';
+        else if (bracketWins === 2) finalRank = '5th–8th';
+        else if (bracketWins === 1) finalRank = '9th–12th';
+        else finalRank = '13th–16th';
+      } else if (lastPlay.includes('Silver')) {
+        // Silver A-D are the same tier (ranks 17-32). No 3rd place match within each bracket.
+        // Won final = ~17th-20th, lost final = ~21st-24th, lost semi = ~25th-32nd
+        if (bracketWins >= 2) finalRank = '17th–20th';
+        else if (bracketWins === 1) finalRank = '21st–24th';
+        else finalRank = '25th–32nd';
+      } else if (lastPlay.includes('Bronze')) {
+        if (bracketWins >= 2) finalRank = '33rd–36th';
+        else if (bracketWins === 1) finalRank = '37th–40th';
+        else finalRank = '41st–48th';
+      } else if (lastPlay.includes('Flight')) {
+        if (bracketWins >= 2) finalRank = '49th–52nd';
+        else if (bracketWins === 1) finalRank = '53rd–56th';
+        else finalRank = '57th–64th';
+      }
+    }
+
     return NextResponse.json({
       team: TEAM_NAME,
       teamCode,
@@ -800,6 +841,8 @@ export async function GET(req: Request) {
       futurePaths,
       sundayBrackets,
       activeSundayBracket,
+      finalRank,
+      finalBracket,
     });
 
   } catch (e) {

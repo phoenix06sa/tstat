@@ -68,6 +68,8 @@ interface TournamentData {
   workAssignments: WorkAssignment[];
   futurePaths: FuturePath[];
   activeSundayBracket: ActiveSundayBracket | null;
+  finalRank: string | null;
+  finalBracket: string | null;
 }
 interface TeamOption {
   teamId: string; teamName: string; teamCode: string; club: string; pool: string;
@@ -268,6 +270,20 @@ export default function Home() {
               <div className="text-zinc-400 text-sm mt-1">{data.venue}</div>
               <div className="text-zinc-400 text-sm">{data.dates} &middot; {data.division} Division</div>
             </div>
+
+            {/* Final rank banner — shown once all bracket play is complete */}
+            {data.finalRank && (
+              <div className="bg-zinc-900 rounded-xl border border-yellow-700 p-4">
+                <div className="text-xs text-yellow-500 uppercase tracking-widest mb-1">Final Result</div>
+                <div className="flex items-baseline gap-3">
+                  <div className="font-bold text-white text-3xl">{data.finalRank}</div>
+                  <div className="text-zinc-400 text-sm">out of 64</div>
+                </div>
+                {data.finalBracket && (
+                  <div className="text-zinc-500 text-xs mt-1">{data.finalBracket}</div>
+                )}
+              </div>
+            )}
 
             {/* Pool standings */}
             {data.poolStandings.length > 0 && (

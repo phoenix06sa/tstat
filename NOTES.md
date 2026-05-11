@@ -487,21 +487,59 @@ Sections in order, top to bottom:
 
 ---
 
-## 2026 Lone Star Regionals — Our Results
+## Why Our Finish Range Predictions Were Wrong (Important Lesson)
 
-Team: Austin Skyline 14 Black (g14askyl2ls)
-Division: 14 Bid, 64 teams
-Pool 5 (GRB Ct 12) — finished 2nd (1-2 record, advanced via set % tiebreaker: 42.9% vs Roots 37.5% vs United VBA 28.6%)
+We initially predicted Silver = 17th–20th out of 64. Austin Skyline 14 Black actually finished ~25th. Here's why and what to fix next year.
 
-Pool results:
-- Match 2 vs Roots 14-2 Blue: LOSS (25-19, 22-25, 10-15)
-- Match 4 vs United VBA 14 Purple: WIN (26-24, 26-24)
-- Match 6 vs TW Skyline 14 Royal: LOSS (12-25, 16-25)
+### The mistake: Silver A-D are NOT the same "slot"
 
-Challenge Bracket #6 (Sat 6:30 PM, GRB Ct 7):
-- vs Austin Skyline 14 Royal (Pool 6 1st): LOSS (17-25, 19-25)
+We assumed all 4 Silver brackets were the same tier and would all produce ranks 17–20. **That was wrong.** The correct model:
 
-Silver D Bracket (Sunday — 4 teams, finish 17th–20th of 64):
-- Semifinal 12:00 PM GRB Ct 8 — result TBD at time of writing
+- Gold: ranks 1–16 (16 teams)
+- Silver A–D combined: ranks 17–32 (16 teams total, 4 per bracket)
+- Bronze A–D combined: ranks 33–48
+- Flight 1A–1D combined: ranks 49–64
 
-Also tracked: Austin Skyline 14 Royal (g14askyl1ls) went 4-0 through pool + challenge bracket, entered Gold Bracket (Round of 16, 7:30 AM).
+Within each Silver bracket (4 teams, 3 matches: 2 semis + 1 final, **no 3rd place match**):
+- Won final = top end of Silver tier (~17th–20th depending on A/B/C/D position)
+- Lost final = mid Silver (~21st–24th)
+- Lost semi = lower Silver (~25th–32nd) — this is where we landed
+
+**Additionally:** Silver D is NOT the same as Silver A. AES assigns the bracket letter based on which challenge brackets feed into it. Silver A gets the "better" challenge bracket losers (from ChBrkt#1-4), Silver D gets the "worse" ones (ChBrkt#13-16 area). So Silver D semi-finalist = closer to 32nd than 25th.
+
+### Corrected finish range predictions
+
+| Your pool finish | Saturday result | Sunday bracket | Best case | Worst case |
+|---|---|---|---|---|
+| 1st or 2nd | Win Sat bracket | Gold | 1st | 16th |
+| 1st or 2nd | Lose Sat bracket | Silver A–D | 17th | 32nd |
+| 1st (won ChBrkt#1-4) | Lose | Silver A or B | ~17th | ~24th |
+| 2nd (lost ChBrkt#6) | Lose | Silver C or D | ~25th | ~32nd |
+| 3rd in pool | (no Sat game) | Bronze A–D | 33rd | 48th |
+| 4th in pool | (no Sat game) | Flight 1A–1D | 49th | 64th |
+
+### The app now shows
+
+1. **Bracket path cards** — finishRange now correctly spans the full Silver tier (17th–32nd) rather than just 17th–20th for all Silver brackets
+2. **Final Result banner** — appears at the top once all bracket play is done, showing the estimated range based on actual bracket wins. For Silver D semi-finalist (0 bracket wins) = 25th–32nd.
+
+### What we still don't know
+
+AES doesn't publish an official overall numeric rank through the API after the tournament (the `overallRank` field is always null). The "25th place" figure comes from the AES UI doing internal calculation we can't access via API. Our estimated range of 25th–32nd is correct as a range. Getting an exact number would require either:
+1. AES publishing it (they do on the UI but not via API)
+2. Counting all teams ahead of you manually (feasible but complex to automate)
+
+---
+
+## 2026 Lone Star Regionals — Final Results
+
+Austin Skyline 14 Black (g14askyl2ls):
+- Pool 5 (GRB Ct 12): 2nd place (1-2, set % tiebreaker)
+- Challenge Bracket #6: LOSS vs Austin Skyline 14 Royal (17-25, 19-25)
+- Silver D Bracket semi: LOSS vs STVA 14-1 Alyssa (7-25, 15-25)
+- **Final: ~25th–32nd out of 64** (Silver D semi-finalist)
+
+Austin Skyline 14 Royal (g14askyl1ls):
+- Pool 6: 1st place (3-0)
+- Challenge Bracket #5: WIN
+- Gold Bracket: Round of 16 WIN vs Roots 14-1 Green (25-23, 12-25, 15-13), then Quarterfinals vs AP 14 adidas
