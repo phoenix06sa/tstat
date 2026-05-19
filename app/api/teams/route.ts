@@ -46,6 +46,23 @@ async function tryFetchTeams(event: string, division: string, date: string): Pro
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getEventDates(event: string, division: string): Promise<string[]> {
+  try {
+    // Try to fetch the division info to get available dates
+    const res = await fetch(`${BASE}/api/event/${event}/division/${division}`, { headers: AES_HEADERS, next: { revalidate: 300 } } as any);
+    if (!res.ok) return [];
+
+    const data = await res.json();
+    if (!data || !data.Dates) return [];
+
+    // AES returns dates in format like "2026-05-09"
+    return data.Dates.map((d: any) => d.Date || d);
+  } catch {
+    return [];
+  }
+}
+
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const event = searchParams.get('event') || DEFAULT_EVENT;
@@ -60,7 +77,19 @@ export async function GET(req: Request) {
     }
   }
 
-  // Try common dates for 2026 tournaments
+  // Try to get actual event dates from AES
+  const eventDates = await getEventDates(event, division);
+
+  if (eventDates.length > 0) {
+    for (const tryDate of eventDates) {
+      const teams = await tryFetchTeams(event, division, tryDate);
+      if (teams && teams.length > 0) {
+        return NextResponse.json({ teams, event: searchParams.get('eventName') || 'Tournament', division: searchParams.get('divisionName') || 'Division' });
+      }
+    }
+  }
+
+  // Fallback to common dates if event dates fetch fails
   const datesToTry = [
     '2026-05-09', '2026-05-10', // May tournament
     '2026-05-16', '2026-05-17', // Mid-May
