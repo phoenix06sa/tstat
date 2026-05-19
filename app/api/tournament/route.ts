@@ -4,8 +4,8 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
 const BASE = 'https://results.advancedeventsystems.com';
-const EVENT = 'PTAwMDAwNDEyNDA90';
-const DIV = '195174';
+const DEFAULT_EVENT = 'PTAwMDAwNDEyNDA90';
+const DEFAULT_DIV = '195174';
 
 const AES_HEADERS = {
   'accept': 'application/json, text/plain, */*',
@@ -78,11 +78,15 @@ function resolveOpponent(opponentPoolTeams: any[], wantRank: number): string {
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const teamCode = searchParams.get('team') || 'g14askyl2ls';
+  const event = searchParams.get('event') || DEFAULT_EVENT;
+  const division = searchParams.get('division') || DEFAULT_DIV;
+  const date1 = searchParams.get('date1') || '2026-05-09';
+  const date2 = searchParams.get('date2') || '2026-05-10';
 
   try {
     const [day1, day2] = await Promise.all([
-      aes(`/api/event/${EVENT}/division/${DIV}/plays/2026-05-09`),
-      aes(`/api/event/${EVENT}/division/${DIV}/plays/2026-05-10`),
+      aes(`/api/event/${event}/division/${division}/plays/${date1}`),
+      aes(`/api/event/${event}/division/${division}/plays/${date2}`),
     ]);
 
     // --- Find the team's pool ---
@@ -110,10 +114,10 @@ export async function GET(req: Request) {
 
     // --- Fetch team-specific schedule ---
     const [current, work, future, past] = await Promise.all([
-      aes(`/api/event/${EVENT}/division/${DIV}/team/${TEAM_ID}/schedule/current`),
-      aes(`/api/event/${EVENT}/division/${DIV}/team/${TEAM_ID}/schedule/work`),
-      aes(`/api/event/${EVENT}/division/${DIV}/team/${TEAM_ID}/schedule/future`),
-      aes(`/api/event/${EVENT}/division/${DIV}/team/${TEAM_ID}/schedule/past`),
+      aes(`/api/event/${event}/division/${division}/team/${TEAM_ID}/schedule/current`),
+      aes(`/api/event/${event}/division/${division}/team/${TEAM_ID}/schedule/work`),
+      aes(`/api/event/${event}/division/${division}/team/${TEAM_ID}/schedule/future`),
+      aes(`/api/event/${event}/division/${division}/team/${TEAM_ID}/schedule/past`),
     ]);
 
     // --- Pool standings with tiebreaker explanation ---

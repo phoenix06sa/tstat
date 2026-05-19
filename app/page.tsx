@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 
 interface SetScore { us: number | null; them: number | null }
 interface PoolMatch {
@@ -99,26 +100,46 @@ function SetScores({ sets, hasScores }: { sets: SetScore[]; hasScores: boolean }
   );
 }
 
-const DEFAULT_TEAM = 'g14askyl2ls';
-
 export default function Home() {
+  const router = useRouter();
   const [data, setData] = useState<TournamentData | null>(null);
   const [teams, setTeams] = useState<TeamOption[]>([]);
-  const [selectedTeam, setSelectedTeam] = useState(DEFAULT_TEAM);
+  const [selectedTeam, setSelectedTeam] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [lastRefresh, setLastRefresh] = useState('');
+  const [config, setConfig] = useState<{ eventId: string; divisionId: string; eventName: string } | null>(null);
 
-  // Load team list once
+  // Check for configuration and load default team
   useEffect(() => {
-    fetch('/api/teams').then(r => r.json()).then(d => setTeams(d.teams || []));
-  }, []);
+    const eventId = localStorage.getItem('tracker_eventId');
+    const divisionId = localStorage.getItem('tracker_divisionId');
+    const eventName = localStorage.getItem('tracker_eventName');
+    const defaultTeam = localStorage.getItem('tracker_defaultTeam');
+
+    if (!eventId || !divisionId) {
+      router.push('/setup');
+      return;
+    }
+
+    setConfig({ eventId, divisionId, eventName: eventName || 'Tournament' });
+    if (defaultTeam) setSelectedTeam(defaultTeam);
+  }, [router]);
+
+  // Load team list once after config is loaded
+  useEffect(() => {
+    if (!config) return;
+    fetch(`/api/teams?event=${config.eventId}&division=${config.divisionId}&eventName=${encodeURIComponent(config.eventName)}`)
+      .then(r => r.json())
+      .then(d => setTeams(d.teams || []));
+  }, [config]);
 
   const fetchData = useCallback(async (teamCode: string) => {
+    if (!config) return;
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`/api/tournament?team=${teamCode}&t=${Date.now()}`);
+      const res = await fetch(`/api/tournament?team=${teamCode}&event=${config.eventId}&division=${config.divisionId}&t=${Date.now()}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       if (json.error) throw new Error(json.error);
@@ -129,19 +150,25 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [config]);
 
-  useEffect(() => { fetchData(selectedTeam); }, [fetchData, selectedTeam]);
+  useEffect(() => { if (selectedTeam && config) fetchData(selectedTeam); }, [fetchData, selectedTeam, config]);
 
   // Auto-refresh every 90 seconds
   useEffect(() => {
+    if (!selectedTeam || !config) return;
     const interval = setInterval(() => fetchData(selectedTeam), 90_000);
     return () => clearInterval(interval);
-  }, [fetchData, selectedTeam]);
+  }, [fetchData, selectedTeam, config]);
 
   function handleTeamChange(code: string) {
     setSelectedTeam(code);
+    localStorage.setItem('tracker_defaultTeam', code);
     setData(null);
+  }
+
+  function handleReconfigure() {
+    router.push('/setup');
   }
 
   // Group teams by pool for the dropdown
@@ -205,20 +232,29 @@ export default function Home() {
         <div className="max-w-2xl mx-auto">
           <div className="flex items-center justify-between mb-3">
             <div>
-              <div className="text-xs text-zinc-500 uppercase tracking-widest mb-0.5">Lone Star Regionals 2026</div>
+              <div className="text-xs text-zinc-500 uppercase tracking-widest mb-0.5">{config?.eventName || 'Tournament'}</div>
               <div className="font-bold text-white text-lg leading-tight truncate">
                 {data?.team || 'Loading…'}
               </div>
               <div className="text-zinc-500 text-xs">{data?.poolName}</div>
             </div>
-            <button
-              onClick={() => fetchData(selectedTeam)}
-              disabled={loading}
-              className="bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-sm px-3 py-2 rounded-lg flex items-center gap-2 transition-colors shrink-0"
-            >
-              <span className={loading ? 'animate-spin inline-block' : ''}>↻</span>
-              {loading ? 'Loading…' : 'Refresh'}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleReconfigure}
+                className="bg-zinc-800 hover:bg-zinc-700 text-sm px-3 py-2 rounded-lg transition-colors shrink-0"
+                title="Configure event"
+              >
+                ⚙
+              </button>
+              <button
+                onClick={() => fetchData(selectedTeam)}
+                disabled={loading}
+                className="bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-sm px-3 py-2 rounded-lg flex items-center gap-2 transition-colors shrink-0"
+              >
+                <span className={loading ? 'animate-spin inline-block' : ''}>↻</span>
+                {loading ? 'Loading…' : 'Refresh'}
+              </button>
+            </div>
           </div>
 
           {/* Team selector */}
