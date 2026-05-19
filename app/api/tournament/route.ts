@@ -1030,19 +1030,15 @@ export async function GET(req: Request) {
             .filter((m: any) => !champMatchIds.has(m.matchId))
             .sort((a: { time: string }, b: { time: string }) => a.time.localeCompare(b.time));
 
-          // Only show bracket if there are actual scores (tournament in progress or completed)
-          const hasAnyScores = Object.values(allMatches).some((m: any) => m.hasScores);
-          if (hasAnyScores) {
-            activeSundayBracket = {
-              bracketName: sundayPlay.FullName,
-              completeName: sundayPlay.CompleteFullName,
-              courts: (sundayPlay.Courts || []).map((c: { Name: string }) => c.Name),
-              winnersRounds,
-              placementMatches,
-              totalMatches: Object.keys(allMatches).length,
-              finishRange: sundayFinishRanges[sundayPlay.FullName] || null,
-            };
-          }
+          activeSundayBracket = {
+            bracketName: sundayPlay.FullName,
+            completeName: sundayPlay.CompleteFullName,
+            courts: (sundayPlay.Courts || []).map((c: { Name: string }) => c.Name),
+            winnersRounds,
+            placementMatches,
+            totalMatches: Object.keys(allMatches).length,
+            finishRange: sundayFinishRanges[sundayPlay.FullName] || null,
+          };
         }
     }
     const sundayBrackets: object[] = [];
