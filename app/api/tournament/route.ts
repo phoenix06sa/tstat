@@ -43,6 +43,29 @@ async function getEventDates(event: string, division: string): Promise<string[]>
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getEventInfo(event: string, division: string): Promise<{ eventName: string; venue: string; divisionName: string } | null> {
+  try {
+    const res = await fetch(`${BASE}/api/event/${event}`, { headers: AES_HEADERS, next: { revalidate: 300 } } as any);
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    if (!data) return null;
+
+    // Find the specific division
+    const divisionInfo = data.Divisions?.find((d: any) => String(d.DivisionId) === division);
+    if (!divisionInfo) return null;
+
+    return {
+      eventName: data.Name || 'Tournament',
+      venue: data.Facility?.Name || '',
+      divisionName: divisionInfo.Name || 'Division',
+    };
+  } catch {
+    return null;
+  }
+}
+
 function fmtTime(iso: string) {
   if (!iso) return '';
   const [, time] = iso.split('T');
@@ -216,6 +239,17 @@ export async function GET(req: Request) {
     if (!ourPool || !ourTeamInfo) {
       return NextResponse.json({ error: `Team ${teamCode} not found in this division` }, { status: 404 });
     }
+
+    // Fetch event metadata
+    const eventInfo = await getEventInfo(event, division);
+    const eventName = eventInfo?.eventName || 'Tournament';
+    const venue = eventInfo?.venue || '';
+    const divisionName = eventInfo?.divisionName || 'Division';
+
+    // Format dates for display
+    const dates = eventDates.length > 0
+      ? `${new Date(eventDates[0]).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}${eventDates.length > 1 ? ` - ${new Date(eventDates[eventDates.length - 1]).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}`
+      : '';
 
     const TEAM_ID = String(ourTeamInfo.TeamId);
     const TEAM_NAME = ourTeamInfo.TeamName;
@@ -1018,10 +1052,10 @@ export async function GET(req: Request) {
       team: TEAM_NAME,
       teamCode,
       teamId: TEAM_ID,
-      event: '2026 Lone Star Regionals (12-14s)',
-      venue: 'George R. Brown Convention Center',
-      dates: 'May 9-10, 2026',
-      division: '14 Bid',
+      event: eventName,
+      venue: venue,
+      dates: dates,
+      division: divisionName,
       fetchedAt: new Date().toISOString(),
       poolName: ourPool.CompleteFullName || ourPool.FullName,
       poolCourt: ourPool.Courts?.[0]?.Name || '',
@@ -1031,7 +1065,6 @@ export async function GET(req: Request) {
       futurePaths,
       sundayBrackets,
       activeSundayBracket,
-      finalStandings,
     });
 
   } catch (e) {
