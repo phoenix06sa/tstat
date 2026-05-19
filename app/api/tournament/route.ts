@@ -129,80 +129,47 @@ export async function GET(req: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let day2: any = null;
 
-    // Try to fetch division info directly to get pool/team data
-    const divisionInfo = await aes(`/api/event/${event}/division/${division}`);
+    // Always use plays data like the teams API does
+    const playsData = await Promise.all([
+      aes(`/api/event/${event}/division/${division}/plays/${date1}`),
+      aes(`/api/event/${event}/division/${division}/plays/${date2}`),
+    ]);
+    day1 = playsData[0];
+    day2 = playsData[1];
 
-    if (!divisionInfo || !divisionInfo.Pools) {
-      // Fall back to fetching plays data
-      const playsData = await Promise.all([
-        aes(`/api/event/${event}/division/${division}/plays/${date1}`),
-        aes(`/api/event/${event}/division/${division}/plays/${date2}`),
-      ]);
-      day1 = playsData[0];
-      day2 = playsData[1];
+    // If both days return null, the event hasn't started yet
+    if (!day1 && !day2) {
+      return NextResponse.json({
+        error: 'Event data not available yet. The event schedule may not have been published or the event has not started.',
+        event: 'Tournament',
+        venue: '',
+        dates: '',
+        division: 'Division',
+        fetchedAt: new Date().toISOString(),
+        poolName: '',
+        poolCourt: '',
+        poolStandings: [],
+        poolMatches: [],
+        workAssignments: [],
+        futurePaths: [],
+        activeSundayBracket: null,
+      }, { status: 404 });
+    }
 
-      // If both days return null, the event hasn't started yet
-      if (!day1 && !day2) {
-        return NextResponse.json({
-          error: 'Event data not available yet. The event schedule may not have been published or the event has not started.',
-          event: 'Tournament',
-          venue: '',
-          dates: '',
-          division: 'Division',
-          fetchedAt: new Date().toISOString(),
-          poolName: '',
-          poolCourt: '',
-          poolStandings: [],
-          poolMatches: [],
-          workAssignments: [],
-          futurePaths: [],
-          activeSundayBracket: null,
-        }, { status: 404 });
-      }
+    // --- Find the team's pool from plays data ---
+    const pools = day1.filter((p: { PlayType: number }) => p.PlayType === 0);
 
-      // --- Find the team's pool from plays data ---
-      const pools = day1.filter((p: { PlayType: number }) => p.PlayType === 0);
+    for (const pool of pools) {
+      const found = (pool.Teams || []).find((t: { TeamCode: string; TeamId: string | number }) => {
+        const codeMatch = t.TeamCode?.toLowerCase() === teamCode.toLowerCase();
+        const idMatch = String(t.TeamId) === teamCode;
+        return codeMatch || idMatch;
+      });
+      if (found) { ourPool = pool; ourTeamInfo = found; break; }
+    }
 
-      for (const pool of pools) {
-        const found = (pool.Teams || []).find((t: { TeamCode: string; TeamId: string | number }) => {
-          const codeMatch = t.TeamCode?.toLowerCase() === teamCode.toLowerCase();
-          const idMatch = String(t.TeamId) === teamCode;
-          return codeMatch || idMatch;
-        });
-        if (found) { ourPool = pool; ourTeamInfo = found; break; }
-      }
-
-      if (!ourPool || !ourTeamInfo) {
-        return NextResponse.json({ error: `Team ${teamCode} not found in this division` }, { status: 404 });
-      }
-    } else {
-      // Use division info to find team
-      console.log(`Searching for team: ${teamCode}`);
-      console.log(`Division pools: ${divisionInfo.Pools.length}`);
-
-      for (const pool of divisionInfo.Pools) {
-        console.log(`Pool ${pool.FullName}: ${pool.Teams?.length || 0} teams`);
-        const found = (pool.Teams || []).find((t: { TeamCode: string; TeamId: string | number }) => {
-          const codeMatch = t.TeamCode?.toLowerCase() === teamCode.toLowerCase();
-          const idMatch = String(t.TeamId) === teamCode;
-          console.log(`  Checking team: ${t.TeamCode} (ID: ${t.TeamId}) - codeMatch: ${codeMatch}, idMatch: ${idMatch}`);
-          return codeMatch || idMatch;
-        });
-        if (found) { ourPool = pool; ourTeamInfo = found; break; }
-      }
-
-      if (!ourPool || !ourTeamInfo) {
-        console.log(`Team ${teamCode} not found in division info`);
-        return NextResponse.json({ error: `Team ${teamCode} not found in this division` }, { status: 404 });
-      }
-
-      // Try to fetch plays data for bracket info
-      const playsData = await Promise.all([
-        aes(`/api/event/${event}/division/${division}/plays/${date1}`),
-        aes(`/api/event/${event}/division/${division}/plays/${date2}`),
-      ]);
-      day1 = playsData[0];
-      day2 = playsData[1];
+    if (!ourPool || !ourTeamInfo) {
+      return NextResponse.json({ error: `Team ${teamCode} not found in this division` }, { status: 404 });
     }
 
     const TEAM_ID = String(ourTeamInfo.TeamId);
