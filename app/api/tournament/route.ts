@@ -260,7 +260,7 @@ export async function GET(req: Request) {
       }
     }
 
-    const poolStandings = rawTeams.map((t: { TeamCode: string; TeamName: string; MatchesWon: number; MatchesLost: number; SetsWon: number; SetsLost: number; SetPercent: number; PointRatio: number; MatchPercent: string; FinishRank: number | null; OverallRank: number | null; FinishRankText: string }) => ({
+    const poolStandings = rawTeams.map((t: { TeamCode: string; TeamName: string; MatchesWon: number; MatchesLost: number; SetsWon: number; SetsLost: number; SetPercent: number | null; PointRatio: number | null; MatchPercent: string; FinishRank: number | null; OverallRank: number | null; FinishRankText: string }) => ({
       teamName: t.TeamName,
       teamCode: t.TeamCode,
       isUs: t.TeamCode?.toLowerCase() === teamCode.toLowerCase(),
