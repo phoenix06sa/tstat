@@ -64,15 +64,30 @@ export default function SetupPage() {
     setDivisionId(parsed.divisionId);
     setLoading(true);
     setError('');
+
+    // Add timeout warning
+    const timeoutWarning = setTimeout(() => {
+      setError('Taking longer than expected... This may mean the event schedule hasn\'t been published yet, or the AES API is slow.');
+    }, 15000);
+
     try {
       const res = await fetch(`/api/teams?event=${parsed.eventId}&division=${parsed.divisionId}`);
+      clearTimeout(timeoutWarning);
+
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       if (json.error) throw new Error(json.error);
+
+      if (!json.teams || json.teams.length === 0) {
+        setError('No teams found. The event schedule may not have been published yet.');
+        return;
+      }
+
       setTeams(json.teams || []);
       setEventName(json.event || '');
       setStep('team');
     } catch (e) {
+      clearTimeout(timeoutWarning);
       setError(String(e));
     } finally {
       setLoading(false);
