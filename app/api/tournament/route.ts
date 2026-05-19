@@ -128,38 +128,16 @@ export async function GET(req: Request) {
     let day1: any = null;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let day2: any = null;
+    let foundDate = '';
 
-    // Try specific dates if provided
-    if (date1Param && date2Param) {
-      const playsData = await Promise.all([
-        aes(`/api/event/${event}/division/${division}/plays/${date1Param}`),
-        aes(`/api/event/${event}/division/${division}/plays/${date2Param}`),
-      ]);
-      day1 = playsData[0];
-      day2 = playsData[1];
+    // Use the same date-finding logic as the teams API
+    const eventDates = await getEventDates(event, division);
 
-      // --- Find the team's pool from plays data ---
-      if (day1) {
-        const pools = day1.filter((p: { PlayType: number }) => p.PlayType === 0);
-        for (const pool of pools) {
-          const found = (pool.Teams || []).find((t: { TeamCode: string; TeamId: string | number }) => {
-            const codeMatch = t.TeamCode?.toLowerCase() === teamCode.toLowerCase();
-            const idMatch = String(t.TeamId) === teamCode;
-            return codeMatch || idMatch;
-          });
-          if (found) { ourPool = pool; ourTeamInfo = found; break; }
-        }
-      }
-    }
-
-    // If not found or no specific dates, try event dates
-    if (!ourPool || !ourTeamInfo) {
-      const eventDates = await getEventDates(event, division);
-
-      if (eventDates.length >= 2) {
+    if (eventDates.length > 0) {
+      for (const tryDate of eventDates) {
         const playsData = await Promise.all([
-          aes(`/api/event/${event}/division/${division}/plays/${eventDates[0]}`),
-          aes(`/api/event/${event}/division/${division}/plays/${eventDates[1]}`),
+          aes(`/api/event/${event}/division/${division}/plays/${tryDate}`),
+          aes(`/api/event/${event}/division/${division}/plays/${tryDate}`),
         ]);
         day1 = playsData[0];
         day2 = playsData[1];
@@ -172,13 +150,14 @@ export async function GET(req: Request) {
               const idMatch = String(t.TeamId) === teamCode;
               return codeMatch || idMatch;
             });
-            if (found) { ourPool = pool; ourTeamInfo = found; break; }
+            if (found) { ourPool = pool; ourTeamInfo = found; foundDate = tryDate; break; }
           }
+          if (ourPool && ourTeamInfo) break;
         }
       }
     }
 
-    // If still not found, try common dates
+    // If not found in event dates, try common dates
     if (!ourPool || !ourTeamInfo) {
       const datesToTry = [
         '2026-05-09', '2026-05-10', // May tournament
@@ -208,7 +187,7 @@ export async function GET(req: Request) {
               const idMatch = String(t.TeamId) === teamCode;
               return codeMatch || idMatch;
             });
-            if (found) { ourPool = pool; ourTeamInfo = found; break; }
+            if (found) { ourPool = pool; ourTeamInfo = found; foundDate = tryDate; break; }
           }
           if (ourPool && ourTeamInfo) break;
         }
