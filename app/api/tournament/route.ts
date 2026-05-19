@@ -129,16 +129,94 @@ export async function GET(req: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let day2: any = null;
 
-    // Always use plays data like the teams API does
-    const playsData = await Promise.all([
-      aes(`/api/event/${event}/division/${division}/plays/${date1}`),
-      aes(`/api/event/${event}/division/${division}/plays/${date2}`),
-    ]);
-    day1 = playsData[0];
-    day2 = playsData[1];
+    // Try specific dates if provided
+    if (date1Param && date2Param) {
+      const playsData = await Promise.all([
+        aes(`/api/event/${event}/division/${division}/plays/${date1Param}`),
+        aes(`/api/event/${event}/division/${division}/plays/${date2Param}`),
+      ]);
+      day1 = playsData[0];
+      day2 = playsData[1];
 
-    // If both days return null, the event hasn't started yet
-    if (!day1 && !day2) {
+      // --- Find the team's pool from plays data ---
+      if (day1) {
+        const pools = day1.filter((p: { PlayType: number }) => p.PlayType === 0);
+        for (const pool of pools) {
+          const found = (pool.Teams || []).find((t: { TeamCode: string; TeamId: string | number }) => {
+            const codeMatch = t.TeamCode?.toLowerCase() === teamCode.toLowerCase();
+            const idMatch = String(t.TeamId) === teamCode;
+            return codeMatch || idMatch;
+          });
+          if (found) { ourPool = pool; ourTeamInfo = found; break; }
+        }
+      }
+    }
+
+    // If not found or no specific dates, try event dates
+    if (!ourPool || !ourTeamInfo) {
+      const eventDates = await getEventDates(event, division);
+
+      if (eventDates.length >= 2) {
+        const playsData = await Promise.all([
+          aes(`/api/event/${event}/division/${division}/plays/${eventDates[0]}`),
+          aes(`/api/event/${event}/division/${division}/plays/${eventDates[1]}`),
+        ]);
+        day1 = playsData[0];
+        day2 = playsData[1];
+
+        if (day1) {
+          const pools = day1.filter((p: { PlayType: number }) => p.PlayType === 0);
+          for (const pool of pools) {
+            const found = (pool.Teams || []).find((t: { TeamCode: string; TeamId: string | number }) => {
+              const codeMatch = t.TeamCode?.toLowerCase() === teamCode.toLowerCase();
+              const idMatch = String(t.TeamId) === teamCode;
+              return codeMatch || idMatch;
+            });
+            if (found) { ourPool = pool; ourTeamInfo = found; break; }
+          }
+        }
+      }
+    }
+
+    // If still not found, try common dates
+    if (!ourPool || !ourTeamInfo) {
+      const datesToTry = [
+        '2026-05-09', '2026-05-10', // May tournament
+        '2026-05-16', '2026-05-17', // Mid-May
+        '2026-05-23', '2026-05-24', // Late May
+        '2026-06-06', '2026-06-07', // June tournament
+        '2026-06-13', '2026-06-14', // Mid-June
+        '2026-06-20', '2026-06-21', // Late June
+        '2026-06-27', '2026-06-28', // End of June
+        '2026-07-11', '2026-07-12', // July
+        '2026-07-18', '2026-07-19', // Mid-July
+      ];
+
+      for (const tryDate of datesToTry) {
+        const playsData = await Promise.all([
+          aes(`/api/event/${event}/division/${division}/plays/${tryDate}`),
+          aes(`/api/event/${event}/division/${division}/plays/${tryDate}`),
+        ]);
+        day1 = playsData[0];
+        day2 = playsData[1];
+
+        if (day1) {
+          const pools = day1.filter((p: { PlayType: number }) => p.PlayType === 0);
+          for (const pool of pools) {
+            const found = (pool.Teams || []).find((t: { TeamCode: string; TeamId: string | number }) => {
+              const codeMatch = t.TeamCode?.toLowerCase() === teamCode.toLowerCase();
+              const idMatch = String(t.TeamId) === teamCode;
+              return codeMatch || idMatch;
+            });
+            if (found) { ourPool = pool; ourTeamInfo = found; break; }
+          }
+          if (ourPool && ourTeamInfo) break;
+        }
+      }
+    }
+
+    // If both days return null or team not found
+    if (!day1 || !day2) {
       return NextResponse.json({
         error: 'Event data not available yet. The event schedule may not have been published or the event has not started.',
         event: 'Tournament',
@@ -154,18 +232,6 @@ export async function GET(req: Request) {
         futurePaths: [],
         activeSundayBracket: null,
       }, { status: 404 });
-    }
-
-    // --- Find the team's pool from plays data ---
-    const pools = day1.filter((p: { PlayType: number }) => p.PlayType === 0);
-
-    for (const pool of pools) {
-      const found = (pool.Teams || []).find((t: { TeamCode: string; TeamId: string | number }) => {
-        const codeMatch = t.TeamCode?.toLowerCase() === teamCode.toLowerCase();
-        const idMatch = String(t.TeamId) === teamCode;
-        return codeMatch || idMatch;
-      });
-      if (found) { ourPool = pool; ourTeamInfo = found; break; }
     }
 
     if (!ourPool || !ourTeamInfo) {
