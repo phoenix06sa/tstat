@@ -122,11 +122,17 @@ export async function GET(req: Request) {
   const date2Param = searchParams.get('date2');
 
   // Determine dates to use
-  let date1 = date1Param;
-  let date2 = date2Param;
+  let date1 = '';
+  let date2 = '';
 
-  if (!date1 || !date2) {
-    // Try to get actual event dates from AES
+  // Temporarily revert to hardcoded dates for original event to restore bracket functionality
+  if (event === DEFAULT_EVENT && division === DEFAULT_DIV) {
+    date1 = '2026-05-09';
+    date2 = '2026-05-10';
+  } else if (date1Param && date2Param) {
+    date1 = date1Param;
+    date2 = date2Param;
+  } else {
     const eventDates = await getEventDates(event, division);
 
     if (eventDates.length >= 2) {
