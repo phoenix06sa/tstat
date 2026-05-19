@@ -181,10 +181,13 @@ export async function GET(req: Request) {
         }
       }
     } else {
+      console.log(`Searching for team ${teamCode} in new event ${event} division ${division}`);
       const eventDates = await getEventDates(event, division);
+      console.log(`Event dates: ${eventDates.join(', ')}`);
 
       if (eventDates.length > 0) {
         for (const tryDate of eventDates) {
+          console.log(`Trying date: ${tryDate}`);
           const playsData = await Promise.all([
             aes(`/api/event/${event}/division/${division}/plays/${tryDate}`),
             aes(`/api/event/${event}/division/${division}/plays/${tryDate}`),
@@ -193,8 +196,11 @@ export async function GET(req: Request) {
           day2 = playsData[1];
 
           if (day1) {
+            console.log(`Found day1 data with ${day1.length} plays`);
             const pools = day1.filter((p: { PlayType: number }) => p.PlayType === 0);
+            console.log(`Found ${pools.length} pools`);
             for (const pool of pools) {
+              console.log(`Pool ${pool.FullName} has ${pool.Teams?.length || 0} teams`);
               const found = (pool.Teams || []).find((t: { TeamCode: string; TeamId: string | number }) => {
                 const codeMatch = t.TeamCode?.toLowerCase() === teamCode.toLowerCase();
                 const idMatch = String(t.TeamId) === teamCode;
@@ -203,12 +209,15 @@ export async function GET(req: Request) {
               if (found) { ourPool = pool; ourTeamInfo = found; foundDate = tryDate; break; }
             }
             if (ourPool && ourTeamInfo) break;
+          } else {
+            console.log(`No data found for date ${tryDate}`);
           }
         }
       }
 
       // If not found in event dates, try common dates
       if (!ourPool || !ourTeamInfo) {
+        console.log(`Team not found in event dates, trying common dates`);
         const datesToTry = [
           '2026-05-09', '2026-05-10', // May tournament
           '2026-05-16', '2026-05-17', // Mid-May
@@ -222,6 +231,7 @@ export async function GET(req: Request) {
         ];
 
         for (const tryDate of datesToTry) {
+          console.log(`Trying common date: ${tryDate}`);
           const playsData = await Promise.all([
             aes(`/api/event/${event}/division/${division}/plays/${tryDate}`),
             aes(`/api/event/${event}/division/${division}/plays/${tryDate}`),
