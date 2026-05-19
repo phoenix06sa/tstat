@@ -255,7 +255,7 @@ export async function GET(req: Request) {
         if (!allSameSetPerc) {
           tiebreakers[t.TeamCode] = `Tied ${record} on matches, advanced by set % (${(t.SetPercent * 100).toFixed(1)}%)`;
         } else {
-          tiebreakers[t.TeamCode] = `Tied ${record} on matches + sets, advanced by point ratio (${t.PointRatio.toFixed(3)})`;
+          tiebreakers[t.TeamCode] = `Tied ${record} on matches + sets, advanced by point ratio (${t.PointRatio ? t.PointRatio.toFixed(3) : 'N/A'})`;
         }
       }
     }
