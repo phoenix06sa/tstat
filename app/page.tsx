@@ -239,9 +239,17 @@ export default function Home() {
       {/* Header */}
       <div className="bg-zinc-900 border-b border-zinc-800 px-4 py-4 sticky top-0 z-10">
         <div className="max-w-2xl mx-auto">
+          {/* Event info */}
+          {data && (
+            <div className="mb-3">
+              <div className="font-semibold text-white text-base">{data.event}</div>
+              <div className="text-zinc-400 text-sm">{data.venue}</div>
+              <div className="text-zinc-400 text-sm">{data.dates} · {data.division} Division</div>
+            </div>
+          )}
+
           <div className="flex items-center justify-between mb-3">
             <div>
-              <div className="text-xs text-zinc-500 uppercase tracking-widest mb-0.5">{config?.eventName || 'Tournament'}</div>
               <div className="font-bold text-white text-lg leading-tight truncate">
                 {data?.team || 'Loading…'}
               </div>
@@ -307,14 +315,6 @@ export default function Home() {
 
         {data && (
           <>
-            {/* Event info */}
-            <div className="bg-zinc-900 rounded-xl p-4 border border-zinc-800">
-              <div className="text-xs text-zinc-500 uppercase tracking-widest mb-2">Event</div>
-              <div className="font-semibold text-white">{data.event}</div>
-              <div className="text-zinc-400 text-sm mt-1">{data.venue}</div>
-              <div className="text-zinc-400 text-sm">{data.dates} &middot; {data.division} Division</div>
-            </div>
-
             {/* Pool standings */}
             {data.poolStandings.length > 0 && (
               <div className="bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden">
