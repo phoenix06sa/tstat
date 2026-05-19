@@ -249,13 +249,13 @@ export async function GET(req: Request) {
     for (const [record, group] of Object.entries(matchRecordGroups)) {
       if (group.length < 2) continue;
       // Check what broke the tie
-      const setPercs = group.map((t: { TeamCode: string; SetPercent: number }) => t.SetPercent);
-      const allSameSetPerc = setPercs.every((v: number) => v === setPercs[0]);
+      const setPercs = group.map((t: { TeamCode: string; SetPercent: number | null }) => t.SetPercent);
+      const allSameSetPerc = setPercs.every((v: number | null) => v === setPercs[0]);
       for (const t of group) {
         if (!allSameSetPerc) {
-          tiebreakers[t.TeamCode] = `Tied ${record} on matches, advanced by set % (${(t.SetPercent * 100).toFixed(1)}%)`;
+          tiebreakers[t.TeamCode] = `Tied ${record} on matches, advanced by set % (${t.SetPercent !== null ? (t.SetPercent * 100).toFixed(1) : 'N/A'}%)`;
         } else {
-          tiebreakers[t.TeamCode] = `Tied ${record} on matches + sets, advanced by point ratio (${t.PointRatio ? t.PointRatio.toFixed(3) : 'N/A'})`;
+          tiebreakers[t.TeamCode] = `Tied ${record} on matches + sets, advanced by point ratio (${t.PointRatio !== null && typeof t.PointRatio === 'number' ? t.PointRatio.toFixed(3) : 'N/A'})`;
         }
       }
     }
