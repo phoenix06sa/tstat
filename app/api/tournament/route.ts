@@ -284,28 +284,28 @@ export async function GET(req: Request) {
     let divisionName = 'Division';
     let dates = '';
 
-    // Temporarily disable metadata fetch to restore bracket functionality
-    // TODO: Debug why metadata fetch breaks bracket play for original event
-    // if (event === DEFAULT_EVENT && division === DEFAULT_DIV) {
-    //   eventName = '2026 Lone Star Regionals (12-14s)';
-    //   venue = 'George R. Brown Convention Center';
-    //   dates = 'May 9-10, 2026';
-    //   divisionName = '14 Bid';
-    // } else {
-    //   try {
-    //     const eventInfo = await getEventInfo(event, division);
-    //     if (eventInfo) {
-    //       eventName = eventInfo.eventName || 'Tournament';
-    //       venue = eventInfo.venue || '';
-    //       divisionName = eventInfo.divisionName || 'Division';
-    //     }
-    //     if (eventDates.length > 0) {
-    //       dates = `${new Date(eventDates[0]).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}${eventDates.length > 1 ? ` - ${new Date(eventDates[eventDates.length - 1]).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}`;
-    //     }
-    //   } catch (e) {
-    //     console.error('Failed to fetch event info:', e);
-    //   }
-    // }
+    // Use hardcoded values for original event to preserve bracket functionality
+    if (event === DEFAULT_EVENT && division === DEFAULT_DIV) {
+      eventName = '2026 Lone Star Regionals (12-14s)';
+      venue = 'George R. Brown Convention Center';
+      dates = 'May 9-10, 2026';
+      divisionName = '14 Bid';
+    } else {
+      try {
+        const eventInfo = await getEventInfo(event, division);
+        if (eventInfo) {
+          eventName = eventInfo.eventName || 'Tournament';
+          venue = eventInfo.venue || '';
+          divisionName = eventInfo.divisionName || 'Division';
+        }
+        const eventDates = await getEventDates(event, division);
+        if (eventDates.length > 0) {
+          dates = `${new Date(eventDates[0]).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}${eventDates.length > 1 ? ` - ${new Date(eventDates[eventDates.length - 1]).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}`;
+        }
+      } catch (e) {
+        console.error('Failed to fetch event info:', e);
+      }
+    }
 
     const TEAM_ID = String(ourTeamInfo.TeamId);
     const TEAM_NAME = ourTeamInfo.TeamName;
