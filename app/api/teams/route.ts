@@ -14,32 +14,72 @@ const AES_HEADERS = {
   'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function tryFetchTeams(event: string, division: string, date: string): Promise<any[] | null> {
+  try {
+    const res = await fetch(`${BASE}/api/event/${event}/division/${division}/plays/${date}`, { headers: AES_HEADERS, next: { revalidate: 300 } } as any);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!Array.isArray(data)) return null;
+
+    const pools = data.filter((p: { PlayType: number }) => p.PlayType === 0)
+      .sort((a: { Order: number }, b: { Order: number }) => a.Order - b.Order);
+
+    if (pools.length === 0) return null;
+
+    const teams = [];
+    for (const pool of pools) {
+      for (const t of (pool.Teams || [])) {
+        teams.push({
+          teamId: String(t.TeamId),
+          teamName: t.TeamName,
+          teamCode: t.TeamCode,
+          club: t.Club?.Name || '',
+          pool: pool.FullName,
+          poolOrder: pool.Order,
+        });
+      }
+    }
+    return teams;
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const event = searchParams.get('event') || DEFAULT_EVENT;
   const division = searchParams.get('division') || DEFAULT_DIV;
-  const date = searchParams.get('date') || '2026-05-09';
+  const date = searchParams.get('date');
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const res = await fetch(`${BASE}/api/event/${event}/division/${division}/plays/${date}`, { headers: AES_HEADERS, next: { revalidate: 300 } } as any);
-  const day1 = await res.json();
-
-  const pools = day1.filter((p: { PlayType: number }) => p.PlayType === 0)
-    .sort((a: { Order: number }, b: { Order: number }) => a.Order - b.Order);
-
-  const teams = [];
-  for (const pool of pools) {
-    for (const t of (pool.Teams || [])) {
-      teams.push({
-        teamId: String(t.TeamId),
-        teamName: t.TeamName,
-        teamCode: t.TeamCode,
-        club: t.Club?.Name || '',
-        pool: pool.FullName,
-        poolOrder: pool.Order,
-      });
+  // Try specific date if provided
+  if (date) {
+    const teams = await tryFetchTeams(event, division, date);
+    if (teams) {
+      return NextResponse.json({ teams, event: searchParams.get('eventName') || 'Tournament', division: searchParams.get('divisionName') || 'Division' });
     }
   }
 
-  return NextResponse.json({ teams, event: searchParams.get('eventName') || 'Tournament', division: searchParams.get('divisionName') || 'Division' });
+  // Try common dates for 2026 tournaments
+  const datesToTry = [
+    '2026-05-09', '2026-05-10', // May tournament
+    '2026-05-16', '2026-05-17', // Mid-May
+    '2026-05-23', '2026-05-24', // Late May
+    '2026-06-06', '2026-06-07', // June tournament
+    '2026-06-13', '2026-06-14', // Mid-June
+    '2026-06-20', '2026-06-21', // Late June
+    '2026-06-27', '2026-06-28', // End of June
+    '2026-07-11', '2026-07-12', // July
+    '2026-07-18', '2026-07-19', // Mid-July
+  ];
+
+  for (const tryDate of datesToTry) {
+    const teams = await tryFetchTeams(event, division, tryDate);
+    if (teams && teams.length > 0) {
+      return NextResponse.json({ teams, event: searchParams.get('eventName') || 'Tournament', division: searchParams.get('divisionName') || 'Division' });
+    }
+  }
+
+  // If all dates fail, return empty teams
+  return NextResponse.json({ teams: [], event: searchParams.get('eventName') || 'Tournament', division: searchParams.get('divisionName') || 'Division' });
 }
