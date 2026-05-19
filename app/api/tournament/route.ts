@@ -244,21 +244,30 @@ export async function GET(req: Request) {
     let eventName = 'Tournament';
     let venue = '';
     let divisionName = 'Division';
-    try {
-      const eventInfo = await getEventInfo(event, division);
-      if (eventInfo) {
-        eventName = eventInfo.eventName || 'Tournament';
-        venue = eventInfo.venue || '';
-        divisionName = eventInfo.divisionName || 'Division';
-      }
-    } catch (e) {
-      console.error('Failed to fetch event info:', e);
-    }
+    let dates = '';
 
-    // Format dates for display
-    const dates = eventDates.length > 0
-      ? `${new Date(eventDates[0]).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}${eventDates.length > 1 ? ` - ${new Date(eventDates[eventDates.length - 1]).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}`
-      : '';
+    // Use hardcoded values for the original event to preserve bracket functionality
+    if (event === DEFAULT_EVENT && division === DEFAULT_DIV) {
+      eventName = '2026 Lone Star Regionals (12-14s)';
+      venue = 'George R. Brown Convention Center';
+      dates = 'May 9-10, 2026';
+      divisionName = '14 Bid';
+    } else {
+      try {
+        const eventInfo = await getEventInfo(event, division);
+        if (eventInfo) {
+          eventName = eventInfo.eventName || 'Tournament';
+          venue = eventInfo.venue || '';
+          divisionName = eventInfo.divisionName || 'Division';
+        }
+        // Format dates for display
+        if (eventDates.length > 0) {
+          dates = `${new Date(eventDates[0]).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}${eventDates.length > 1 ? ` - ${new Date(eventDates[eventDates.length - 1]).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}`;
+        }
+      } catch (e) {
+        console.error('Failed to fetch event info:', e);
+      }
+    }
 
     const TEAM_ID = String(ourTeamInfo.TeamId);
     const TEAM_NAME = ourTeamInfo.TeamName;
