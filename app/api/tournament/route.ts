@@ -1121,6 +1121,7 @@ export async function GET(req: Request) {
       futurePaths,
       sundayBrackets,
       activeSundayBracket,
+      finalStandings,
     });
 
   } catch (e) {
