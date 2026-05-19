@@ -164,9 +164,11 @@ export async function GET(req: Request) {
       const pools = day1.filter((p: { PlayType: number }) => p.PlayType === 0);
 
       for (const pool of pools) {
-        const found = (pool.Teams || []).find((t: { TeamCode: string }) =>
-          t.TeamCode?.toLowerCase() === teamCode.toLowerCase()
-        );
+        const found = (pool.Teams || []).find((t: { TeamCode: string; TeamId: string | number }) => {
+          const codeMatch = t.TeamCode?.toLowerCase() === teamCode.toLowerCase();
+          const idMatch = String(t.TeamId) === teamCode;
+          return codeMatch || idMatch;
+        });
         if (found) { ourPool = pool; ourTeamInfo = found; break; }
       }
 
@@ -176,9 +178,11 @@ export async function GET(req: Request) {
     } else {
       // Use division info to find team
       for (const pool of divisionInfo.Pools) {
-        const found = (pool.Teams || []).find((t: { TeamCode: string }) =>
-          t.TeamCode?.toLowerCase() === teamCode.toLowerCase()
-        );
+        const found = (pool.Teams || []).find((t: { TeamCode: string; TeamId: string | number }) => {
+          const codeMatch = t.TeamCode?.toLowerCase() === teamCode.toLowerCase();
+          const idMatch = String(t.TeamId) === teamCode;
+          return codeMatch || idMatch;
+        });
         if (found) { ourPool = pool; ourTeamInfo = found; break; }
       }
 
