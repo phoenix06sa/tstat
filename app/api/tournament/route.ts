@@ -554,13 +554,24 @@ export async function GET(req: Request) {
       const findMatchWithTeam = (node: any): any => {
         if (!node) return null;
         const m = node.Match || {};
-        if (m.FirstTeamText === teamText || m.SecondTeamText === teamText) return { match: m, rootMatch: null };
+        // Match exact text or partial match (team names in brackets may have pool numbers appended)
+        const t1: string = m.FirstTeamText || '';
+        const t2: string = m.SecondTeamText || '';
+        if (t1 === teamText || t2 === teamText || t1.startsWith(teamText) || t2.startsWith(teamText)) return { match: m, rootMatch: null };
         return findMatchWithTeam(node.TopSource) || findMatchWithTeam(node.BottomSource);
       };
       for (const b of day2) {
         if (!b || typeof b !== 'object') continue;
         const sources = extractAllSources(b);
-        if (!sources.has(teamText)) continue;
+        // Check if team text is in sources (partial match allowed)
+        let hasTeam = false;
+        for (const source of sources) {
+          if (source === teamText || source.startsWith(teamText)) {
+            hasTeam = true;
+            break;
+          }
+        }
+        if (!hasTeam) continue;
         for (const r of (b.Roots || [])) {
           const result = findMatchWithTeam(r.TopSource) || findMatchWithTeam(r.BottomSource);
           if (result) {
@@ -744,8 +755,9 @@ export async function GET(req: Request) {
               const m = node.Match || {};
               const t1: string = m.FirstTeamText || '';
               const t2: string = m.SecondTeamText || '';
-              if (t1 === teamText && t2) return t2.replace(' (LS)', '');
-              if (t2 === teamText && t1) return t1.replace(' (LS)', '');
+              // Use partial match for team text (team names may have pool numbers appended)
+              if (t1.startsWith(teamText) && t2) return t2.replace(' (LS)', '').replace(/\s*\(\d+\)$/, '');
+              if (t2.startsWith(teamText) && t1) return t1.replace(' (LS)', '').replace(/\s*\(\d+\)$/, '');
               return findOppInNode(node.TopSource) || findOppInNode(node.BottomSource);
             };
             for (const r of (b.Roots || [])) {
