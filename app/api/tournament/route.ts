@@ -177,16 +177,22 @@ export async function GET(req: Request) {
       }
     } else {
       // Use division info to find team
+      console.log(`Searching for team: ${teamCode}`);
+      console.log(`Division pools: ${divisionInfo.Pools.length}`);
+
       for (const pool of divisionInfo.Pools) {
+        console.log(`Pool ${pool.FullName}: ${pool.Teams?.length || 0} teams`);
         const found = (pool.Teams || []).find((t: { TeamCode: string; TeamId: string | number }) => {
           const codeMatch = t.TeamCode?.toLowerCase() === teamCode.toLowerCase();
           const idMatch = String(t.TeamId) === teamCode;
+          console.log(`  Checking team: ${t.TeamCode} (ID: ${t.TeamId}) - codeMatch: ${codeMatch}, idMatch: ${idMatch}`);
           return codeMatch || idMatch;
         });
         if (found) { ourPool = pool; ourTeamInfo = found; break; }
       }
 
       if (!ourPool || !ourTeamInfo) {
+        console.log(`Team ${teamCode} not found in division info`);
         return NextResponse.json({ error: `Team ${teamCode} not found in this division` }, { status: 404 });
       }
 
