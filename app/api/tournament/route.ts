@@ -28,6 +28,21 @@ async function aes(path: string): Promise<any> {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getEventDates(event: string, division: string): Promise<string[]> {
+  try {
+    const res = await fetch(`${BASE}/api/event/${event}/division/${division}`, { headers: AES_HEADERS, next: { revalidate: 300 } } as any);
+    if (!res.ok) return [];
+
+    const data = await res.json();
+    if (!data || !data.Dates) return [];
+
+    return data.Dates.map((d: any) => d.Date || d);
+  } catch {
+    return [];
+  }
+}
+
 function fmtTime(iso: string) {
   if (!iso) return '';
   const [, time] = iso.split('T');
@@ -80,14 +95,54 @@ export async function GET(req: Request) {
   const teamCode = searchParams.get('team') || 'g14askyl2ls';
   const event = searchParams.get('event') || DEFAULT_EVENT;
   const division = searchParams.get('division') || DEFAULT_DIV;
-  const date1 = searchParams.get('date1') || '2026-05-09';
-  const date2 = searchParams.get('date2') || '2026-05-10';
+  const date1Param = searchParams.get('date1');
+  const date2Param = searchParams.get('date2');
+
+  // Determine dates to use
+  let date1 = date1Param;
+  let date2 = date2Param;
+
+  if (!date1 || !date2) {
+    // Try to get actual event dates from AES
+    const eventDates = await getEventDates(event, division);
+
+    if (eventDates.length >= 2) {
+      date1 = eventDates[0];
+      date2 = eventDates[1];
+    } else if (eventDates.length === 1) {
+      date1 = eventDates[0];
+      date2 = eventDates[0];
+    } else {
+      // Fallback to default dates
+      date1 = '2026-05-09';
+      date2 = '2026-05-10';
+    }
+  }
 
   try {
     const [day1, day2] = await Promise.all([
       aes(`/api/event/${event}/division/${division}/plays/${date1}`),
       aes(`/api/event/${event}/division/${division}/plays/${date2}`),
     ]);
+
+    // If both days return null, the event hasn't started yet
+    if (!day1 && !day2) {
+      return NextResponse.json({
+        error: 'Event data not available yet. The event schedule may not have been published or the event has not started.',
+        event: 'Tournament',
+        venue: '',
+        dates: '',
+        division: 'Division',
+        fetchedAt: new Date().toISOString(),
+        poolName: '',
+        poolCourt: '',
+        poolStandings: [],
+        poolMatches: [],
+        workAssignments: [],
+        futurePaths: [],
+        activeSundayBracket: null,
+      }, { status: 404 });
+    }
 
     // --- Find the team's pool ---
     const pools = day1.filter((p: { PlayType: number }) => p.PlayType === 0);
