@@ -731,7 +731,9 @@ export async function GET(req: Request) {
         // 3rd/4th — no Saturday evening match, straight to Sunday
         // Find their Sunday bracket by their team text
         const teamText = teamAtRank ? `${teamAtRank.TeamName} (LS)` : '';
+        console.log(`3rd/4th place team: ${teamAtRank?.TeamName}, searching for teamText: "${teamText}"`);
         const sundayInfo = teamText ? findSundayForTeamText(teamText) : null;
+        console.log(`Sunday info found: ${sundayInfo ? sundayInfo.bracketName : 'null'}`);
 
         // Find their first match opponent from Sunday bracket source data
         let sundayOpponent = '';
@@ -754,6 +756,7 @@ export async function GET(req: Request) {
             }
             if (sundayOpponent) break;
           }
+          console.log(`Sunday opponent found: "${sundayOpponent}"`);
         }
 
         // --- Look up actual result from day2 bracket data ---
