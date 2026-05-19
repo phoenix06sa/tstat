@@ -9,6 +9,7 @@ interface TeamOption {
 
 export default function SetupPage() {
   const router = useRouter();
+  const [eventUrl, setEventUrl] = useState('');
   const [eventId, setEventId] = useState('');
   const [divisionId, setDivisionId] = useState('');
   const [eventName, setEventName] = useState('');
@@ -28,17 +29,43 @@ export default function SetupPage() {
     if (savedDivisionId) setDivisionId(savedDivisionId);
     if (savedEventName) setEventName(savedEventName);
     if (savedTeam) setSelectedTeam(savedTeam);
+    if (savedEventId && savedDivisionId) {
+      setEventUrl(`https://results.advancedeventsystems.com/event/${savedEventId}/divisions/${savedDivisionId}/overview`);
+    }
   }, []);
 
+  const parseEventUrl = (url: string) => {
+    try {
+      const urlObj = new URL(url);
+      const pathParts = urlObj.pathname.split('/');
+      const eventIndex = pathParts.indexOf('event');
+      const divisionsIndex = pathParts.indexOf('divisions');
+
+      if (eventIndex >= 0 && divisionsIndex >= 0 && eventIndex + 1 < pathParts.length && divisionsIndex + 1 < pathParts.length) {
+        return {
+          eventId: pathParts[eventIndex + 1],
+          divisionId: pathParts[divisionsIndex + 1],
+        };
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
   const fetchTeams = async () => {
-    if (!eventId || !divisionId) {
-      setError('Please enter both Event ID and Division ID');
+    const parsed = parseEventUrl(eventUrl);
+    if (!parsed) {
+      setError('Invalid URL format. Please paste a full AES event URL like: https://results.advancedeventsystems.com/event/XXXXX/divisions/YYYYY/overview');
       return;
     }
+
+    setEventId(parsed.eventId);
+    setDivisionId(parsed.divisionId);
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`/api/teams?event=${eventId}&division=${divisionId}`);
+      const res = await fetch(`/api/teams?event=${parsed.eventId}&division=${parsed.divisionId}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       if (json.error) throw new Error(json.error);
@@ -84,33 +111,17 @@ export default function SetupPage() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-zinc-300 mb-2">
-                  Event ID
+                  Event URL
                 </label>
                 <input
                   type="text"
-                  value={eventId}
-                  onChange={e => setEventId(e.target.value)}
-                  placeholder="e.g., PTAwMDAwNDEyNDA90"
+                  value={eventUrl}
+                  onChange={e => setEventUrl(e.target.value)}
+                  placeholder="https://results.advancedeventsystems.com/event/XXXXX/divisions/YYYYY/overview"
                   className="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 text-sm rounded-lg px-4 py-3 focus:outline-none focus:border-yellow-500 placeholder-zinc-600"
                 />
                 <p className="text-xs text-zinc-600 mt-1">
-                  From the event URL: advancedeventsystems.com/events/XXXXX
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-2">
-                  Division ID
-                </label>
-                <input
-                  type="text"
-                  value={divisionId}
-                  onChange={e => setDivisionId(e.target.value)}
-                  placeholder="e.g., 195174"
-                  className="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 text-sm rounded-lg px-4 py-3 focus:outline-none focus:border-yellow-500 placeholder-zinc-600"
-                />
-                <p className="text-xs text-zinc-600 mt-1">
-                  Found in the page source or network requests
+                  Paste the full AES event URL (from the divisions/overview page)
                 </p>
               </div>
 
@@ -120,7 +131,7 @@ export default function SetupPage() {
 
               <button
                 onClick={fetchTeams}
-                disabled={loading || !eventId || !divisionId}
+                disabled={loading || !eventUrl}
                 className="w-full bg-yellow-600 hover:bg-yellow-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white font-medium py-3 rounded-lg transition-colors"
               >
                 {loading ? 'Loading teams…' : 'Continue'}
