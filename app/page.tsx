@@ -140,7 +140,16 @@ export default function Home() {
     setError('');
     try {
       const res = await fetch(`/api/tournament?team=${teamCode}&event=${config.eventId}&division=${config.divisionId}&t=${Date.now()}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const errorText = await res.text();
+        try {
+          const json = JSON.parse(errorText);
+          if (json.error) throw new Error(json.error);
+        } catch {
+          // If not JSON, use the text
+        }
+        throw new Error(`HTTP ${res.status}: ${errorText || 'Unknown error'}`);
+      }
       const json = await res.json();
       if (json.error) throw new Error(json.error);
       setData(json);
