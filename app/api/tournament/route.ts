@@ -240,11 +240,20 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: `Team ${teamCode} not found in this division` }, { status: 404 });
     }
 
-    // Fetch event metadata
-    const eventInfo = await getEventInfo(event, division);
-    const eventName = eventInfo?.eventName || 'Tournament';
-    const venue = eventInfo?.venue || '';
-    const divisionName = eventInfo?.divisionName || 'Division';
+    // Fetch event metadata (don't let this fail the whole request)
+    let eventName = 'Tournament';
+    let venue = '';
+    let divisionName = 'Division';
+    try {
+      const eventInfo = await getEventInfo(event, division);
+      if (eventInfo) {
+        eventName = eventInfo.eventName || 'Tournament';
+        venue = eventInfo.venue || '';
+        divisionName = eventInfo.divisionName || 'Division';
+      }
+    } catch (e) {
+      console.error('Failed to fetch event info:', e);
+    }
 
     // Format dates for display
     const dates = eventDates.length > 0
