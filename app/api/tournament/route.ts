@@ -682,13 +682,19 @@ export async function GET(req: Request) {
           const lostLine = `Lose → ${loserSunday.bracketName}${loseRange ? ` · best ${loseRange.best}, worst ${loseRange.worst} of 64` : ''}`;
           finishRange = [wonLine, lostLine].join('\n');
         } else {
+          // For future tournaments, show predicted finish ranges even if bracket not determined
+          // Challenge bracket winners typically go to Gold, losers to Silver
+          const predictedWinnerBracket = winnerSunday?.bracketName || 'Gold Bracket';
+          const predictedLoserBracket = loserSunday?.bracketName || 'Silver Bracket';
+          const predictedWinRange = winRange || sundayFinishRanges[predictedWinnerBracket] || { best: '1st', worst: '16th' };
+          const predictedLoseRange = loseRange || sundayFinishRanges[predictedLoserBracket] || { best: '17th', worst: '32nd' };
           finishRange = [
             winnerSunday
               ? `Win → ${winnerSunday.bracketName} · best ${winRange?.best ?? '?'}, worst ${winRange?.worst ?? '?'} of 64`
-              : 'Win → TBD',
+              : `Win → ${predictedWinnerBracket} · best ${predictedWinRange.best}, worst ${predictedWinRange.worst} of 64`,
             loserSunday
               ? `Lose → ${loserSunday.bracketName} · best ${loseRange?.best ?? '?'}, worst ${loseRange?.worst ?? '?'} of 64`
-              : 'Lose → TBD',
+              : `Lose → ${predictedLoserBracket} · best ${predictedLoseRange.best}, worst ${predictedLoseRange.worst} of 64`,
           ].join('\n');
         }
 
@@ -849,7 +855,13 @@ export async function GET(req: Request) {
                   ? `${sundayInfo.bracketName} · best ${r.best}, worst ${r.worst} of 64`
                   : `4 teams · ${sundayInfo.bracketName}`;
               })()
-            : '4 teams',
+            : (() => {
+                // For future tournaments, show predicted finish range based on pool rank
+                // 3rd place goes to Bronze (33rd-48th), 4th place goes to Flight (49th-64th)
+                const predictedBracket = poolRank === 3 ? 'Bronze Bracket' : 'Flight Bracket';
+                const predictedRange = poolRank === 3 ? '33rd-48th' : '49th-64th';
+                return `${predictedBracket} · best ${predictedRange.split('-')[0]}, worst ${predictedRange.split('-')[1]} of 64`;
+              })(),
           opponentResolved: sundayOpponent || '',
           hasScores: sundayHasScores,
           weWon: sundayWeWon,
