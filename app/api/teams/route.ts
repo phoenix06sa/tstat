@@ -49,15 +49,23 @@ async function tryFetchTeams(event: string, division: string, date: string): Pro
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getEventDates(event: string, division: string): Promise<string[]> {
   try {
-    // Try to fetch the division info to get available dates
-    const res = await fetch(`${BASE}/api/event/${event}/division/${division}`, { headers: AES_HEADERS, next: { revalidate: 300 } } as any);
+    // Try to fetch the event info to get available dates
+    const res = await fetch(`${BASE}/api/event/${event}`, { headers: AES_HEADERS, next: { revalidate: 300 } } as any);
     if (!res.ok) return [];
 
     const data = await res.json();
-    if (!data || !data.Dates) return [];
+    if (!data || !data.StartDate || !data.EndDate) return [];
 
-    // AES returns dates in format like "2026-05-09"
-    return data.Dates.map((d: any) => d.Date || d);
+    // Generate dates between StartDate and EndDate
+    const start = new Date(data.StartDate);
+    const end = new Date(data.EndDate);
+    const dates: string[] = [];
+
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      dates.push(d.toISOString().split('T')[0]);
+    }
+
+    return dates;
   } catch {
     return [];
   }
