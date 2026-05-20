@@ -144,29 +144,14 @@ export default function Home() {
         const errorText = await res.text();
         try {
           const json = JSON.parse(errorText);
-          if (json.error) {
-            // If team not found in division, redirect to setup to select a team
-            if (json.error.includes('not found in this division')) {
-              localStorage.removeItem('tracker_defaultTeam');
-              router.push('/setup');
-              return;
-            }
-            throw new Error(json.error);
-          }
+          if (json.error) throw new Error(json.error);
         } catch {
           // If not JSON, use the text
         }
         throw new Error(`HTTP ${res.status}: ${errorText || 'Unknown error'}`);
       }
       const json = await res.json();
-      if (json.error) {
-        if (json.error.includes('not found in this division')) {
-          localStorage.removeItem('tracker_defaultTeam');
-          router.push('/setup');
-          return;
-        }
-        throw new Error(json.error);
-      }
+      if (json.error) throw new Error(json.error);
       setData(json);
       setLastRefresh(new Date().toISOString());
     } catch (e) {
@@ -174,7 +159,7 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, [config, router]);
+  }, [config]);
 
   useEffect(() => { if (selectedTeam && config) fetchData(selectedTeam); }, [fetchData, selectedTeam, config]);
 
