@@ -95,11 +95,14 @@ export default function SetupPage() {
   };
 
   const handleSave = () => {
+    const savedEventId = localStorage.getItem('tracker_eventId');
+    // Clear team selection only if event actually changed
+    if (savedEventId && savedEventId !== eventId) {
+      localStorage.removeItem('tracker_defaultTeam');
+    }
     localStorage.setItem('tracker_eventId', eventId);
     localStorage.setItem('tracker_divisionId', divisionId);
     localStorage.setItem('tracker_eventName', eventName);
-    // Clear team selection when event changes - user must select team for new event
-    localStorage.removeItem('tracker_defaultTeam');
     if (selectedTeam) {
       localStorage.setItem('tracker_defaultTeam', selectedTeam);
     }

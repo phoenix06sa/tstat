@@ -146,7 +146,7 @@ export default function Home() {
           const json = JSON.parse(errorText);
           if (json.error) {
             // If team not found in division, redirect to setup to select a team
-            if (json.error.includes('not found in this division') || res.status === 404) {
+            if (json.error.includes('not found in this division')) {
               localStorage.removeItem('tracker_defaultTeam');
               router.push('/setup');
               return;
