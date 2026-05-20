@@ -124,6 +124,10 @@ export default function Home() {
 
     setConfig({ eventId, divisionId, eventName: eventName || 'Tournament' });
     if (defaultTeam) setSelectedTeam(defaultTeam);
+    else {
+      // No team selected, go to setup to select one
+      router.push('/setup');
+    }
   }, [router]);
 
   // Load team list once after config is loaded
