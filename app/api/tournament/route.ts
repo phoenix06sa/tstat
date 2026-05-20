@@ -596,8 +596,12 @@ export async function GET(req: Request) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const teamAtRank: any = sortedStandings[poolRank - 1];
       const isUs = teamAtRank?.TeamCode?.toLowerCase() === teamCode.toLowerCase();
+      const poolPlayComplete = teamAtRank?.FinishRank !== null;
       const rankText = teamAtRank?.FinishRankText || `${poolRank}${poolRank === 1 ? 'st' : poolRank === 2 ? 'nd' : poolRank === 3 ? 'rd' : 'th'}`;
       const finishText = `${rankText}-P${poolNumber}`;
+
+      // For uncompleted pool play, don't show actual team name - show placeholder
+      const displayTeamName = poolPlayComplete ? (teamAtRank?.TeamName || '') : `${poolRank}${poolRank === 1 ? 'st' : poolRank === 2 ? 'nd' : poolRank === 3 ? 'rd' : 'th'} place (TBD)`;
 
       if (poolRank <= 2) {
         // Saturday evening challenge bracket path
@@ -617,8 +621,11 @@ export async function GET(req: Request) {
         let opponentResolved = '';
         let opponentPoolLabel = '';
 
-        // Use actual team data from bracket if available
-        if (brktMatch?.FirstTeam && brktMatch?.SecondTeam) {
+        // Only show actual opponent if:
+        // 1. Pool play is complete (team has a finish rank), AND
+        // 2. Bracket match has been played (has scores)
+        const poolPlayComplete = teamAtRank?.FinishRank !== null;
+        if (poolPlayComplete && brktMatch?.HasScores && brktMatch?.FirstTeam && brktMatch?.SecondTeam) {
           const teamIsFirst = brktMatch.FirstTeam.Code?.toLowerCase() === teamAtRank?.TeamCode?.toLowerCase();
           const oppTeam = teamIsFirst ? brktMatch.SecondTeam : brktMatch.FirstTeam;
           opponentResolved = `${oppTeam.Name} (${oppTeam.Code})`;
@@ -722,7 +729,7 @@ export async function GET(req: Request) {
           finishText,
           rank: poolRank,
           isUs,
-          teamAtRank: teamAtRank?.TeamName || '',
+          teamAtRank: displayTeamName,
           nextPlay: `Round 2 Group 1 ${brktName}`,
           nextPlayShort: brktName || 'Challenge Bracket',
           court,
@@ -746,7 +753,8 @@ export async function GET(req: Request) {
 
         // Find their first match opponent from Sunday bracket source data
         let sundayOpponent = '';
-        if (teamText) {
+        const poolPlayComplete = teamAtRank?.FinishRank !== null;
+        if (teamText && poolPlayComplete) {
           for (const b of day2) {
             if (!b || typeof b !== 'object') continue;
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -755,6 +763,8 @@ export async function GET(req: Request) {
               const m = node.Match || {};
               const t1: string = m.FirstTeamText || '';
               const t2: string = m.SecondTeamText || '';
+              // Only resolve opponent if the match has been played
+              if (!m.HasScores) return '';
               // Use partial match for team text (team names may have pool numbers appended)
               if (t1.startsWith(teamText) && t2) return t2.replace(' (LS)', '').replace(/\s*\(\d+\)$/, '');
               if (t2.startsWith(teamText) && t1) return t1.replace(' (LS)', '').replace(/\s*\(\d+\)$/, '');
@@ -823,7 +833,7 @@ export async function GET(req: Request) {
           finishText,
           rank: poolRank,
           isUs,
-          teamAtRank: teamAtRank?.TeamName || '',
+          teamAtRank: displayTeamName,
           nextPlay: sundayInfo ? `Round 3 Group 1 ${sundayInfo.bracketName} (Sunday)` : 'Sunday bracket TBD',
           nextPlayShort: sundayInfo?.bracketName || 'TBD',
           court: sundayInfo?.court || '',
