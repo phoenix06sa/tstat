@@ -910,18 +910,23 @@ export async function GET(req: Request) {
               sets,
               depth,
               // Resolve actual team names from source matches if slots still say "Winner of..."
-              resolvedTeam1: t1name.startsWith('Winner of') && node.TopSource?.Match?.HasScores
-                ? (() => {
-                    const sm = node.TopSource.Match;
-                    return sm.FirstTeamWon ? (sm.FirstTeam?.Name || sm.FirstTeamText || t1name) : (sm.SecondTeam?.Name || sm.SecondTeamText || t1name);
-                  })()
-                : t1name,
-              resolvedTeam2: t2name.startsWith('Winner of') && node.BottomSource?.Match?.HasScores
-                ? (() => {
-                    const sm = node.BottomSource.Match;
-                    return sm.FirstTeamWon ? (sm.FirstTeam?.Name || sm.FirstTeamText || t2name) : (sm.SecondTeam?.Name || sm.SecondTeamText || t2name);
-                  })()
-                : t2name,
+              // For unplayed matches, don't show actual team names - keep original placeholder text
+              resolvedTeam1: m.HasScores
+                ? (t1name.startsWith('Winner of') && node.TopSource?.Match?.HasScores
+                    ? (() => {
+                        const sm = node.TopSource.Match;
+                        return sm.FirstTeamWon ? (sm.FirstTeam?.Name || sm.FirstTeamText || t1name) : (sm.SecondTeam?.Name || sm.SecondTeamText || t1name);
+                      })()
+                    : t1name)
+                : (m.FirstTeamText || t1name),
+              resolvedTeam2: m.HasScores
+                ? (t2name.startsWith('Winner of') && node.BottomSource?.Match?.HasScores
+                    ? (() => {
+                        const sm = node.BottomSource.Match;
+                        return sm.FirstTeamWon ? (sm.FirstTeam?.Name || sm.FirstTeamText || t2name) : (sm.SecondTeam?.Name || sm.SecondTeamText || t2name);
+                      })()
+                    : t2name)
+                : (m.SecondTeamText || t2name),
               isWinnersSide: !t1name.includes('Loser') && !t2name.includes('Loser'),
               topSourceId: node.TopSource?.Match?.MatchId || null,
               bottomSourceId: node.BottomSource?.Match?.MatchId || null,
