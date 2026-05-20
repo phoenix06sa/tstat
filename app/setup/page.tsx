@@ -74,12 +74,7 @@ export default function SetupPage() {
       const res = await fetch(`/api/teams?event=${parsed.eventId}&division=${parsed.divisionId}`);
       clearTimeout(timeoutWarning);
 
-      if (!res.ok) {
-        const errorText = await res.text();
-        console.error('Teams API error:', res.status, errorText);
-        throw new Error(`HTTP ${res.status}: ${errorText || 'Unknown error'}`);
-      }
-
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       if (json.error) throw new Error(json.error);
 
@@ -93,7 +88,6 @@ export default function SetupPage() {
       setStep('team');
     } catch (e) {
       clearTimeout(timeoutWarning);
-      console.error('Fetch teams error:', e);
       setError(String(e));
     } finally {
       setLoading(false);
@@ -104,6 +98,8 @@ export default function SetupPage() {
     localStorage.setItem('tracker_eventId', eventId);
     localStorage.setItem('tracker_divisionId', divisionId);
     localStorage.setItem('tracker_eventName', eventName);
+    // Clear team selection when event changes - user must select team for new event
+    localStorage.removeItem('tracker_defaultTeam');
     if (selectedTeam) {
       localStorage.setItem('tracker_defaultTeam', selectedTeam);
     }
