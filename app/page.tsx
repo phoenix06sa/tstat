@@ -14,15 +14,11 @@ interface FuturePath {
   finishText: string; rank: number; isUs?: boolean; teamAtRank?: string;
   nextPlay: string; nextPlayShort: string;
   court: string; time: string;
+  bracketDate?: string;
   workCourt: string | null; workTime: string | null;
-  saturdayEvening: boolean;
   note?: string;
   opponentResolved?: string;
-  opponentPoolLabel?: string;
   finishRange?: string;
-  hasScores?: boolean;
-  weWon?: boolean | null;
-  sets?: SetScore[];
 }
 interface ActiveBracketMatch {
   matchId: number; matchName: string; time: string; court: string;
@@ -36,22 +32,12 @@ interface ActiveBracketMatch {
 interface ActiveBracketRound {
   label: string; isChampPath: boolean; matches: ActiveBracketMatch[];
 }
-interface ActiveSundayBracket {
+interface ActiveBracket {
   bracketName: string; completeName: string; courts: string[];
   winnersRounds: ActiveBracketRound[];
   placementMatches: ActiveBracketMatch[];
   totalMatches: number;
   finishRange: { best: string; worst: string; note: string } | null;
-}
-interface TournamentData {
-  team: string; teamCode: string; teamId: string; event: string;
-  venue: string; dates: string; division: string;
-  fetchedAt: string; poolName: string; poolCourt: string;
-  poolStandings: Standing[];
-  poolMatches: PoolMatch[];
-  workAssignments: WorkAssignment[];
-  futurePaths: FuturePath[];
-  activeSundayBracket: ActiveSundayBracket | null;
 }
 interface Standing {
   teamName: string; teamCode: string; isUs: boolean;
@@ -65,10 +51,10 @@ interface TournamentData {
   venue: string; dates: string; division: string;
   fetchedAt: string; poolName: string; poolCourt: string;
   poolStandings: Standing[];
-  poolMatches: PoolMatch[];
+  matches: PoolMatch[];
   workAssignments: WorkAssignment[];
   futurePaths: FuturePath[];
-  activeSundayBracket: ActiveSundayBracket | null;
+  activeBracket: ActiveBracket | null;
   finalStandings: { overallRank: number; tied: boolean; teamName: string; bracket: string; bracketRank: number; isUs: boolean }[];
 }
 interface TeamOption {
@@ -366,41 +352,108 @@ export default function Home() {
               </div>
             )}
 
-            {/* Pool matches + bracket matches */}
-            <div>
-              {data.poolMatches.some(m => !m.isPoolPlay) && (
-                <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Pool Matches</div>
-              )}
-              {!data.poolMatches.some(m => !m.isPoolPlay) && (
-                <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Pool Matches</div>
-              )}
-              <div className="space-y-3">
-                {data.poolMatches.filter(m => m.isPoolPlay).map((m, i) => (
-                  <div key={i} className={`bg-zinc-900 rounded-xl border p-4 ${
-                    m.weWon === true ? 'border-emerald-800' :
-                    m.weWon === false ? 'border-red-900' : 'border-zinc-800'
-                  }`}>
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          <span className="text-xs text-zinc-500 font-mono">{m.matchName}</span>
-                          <span className="text-xs text-zinc-600">{m.date} {m.time}</span>
-                          <span className="text-xs text-zinc-600">{m.court}</span>
+            {/* Bracket Paths — where each pool finish rank leads */}
+            {data.futurePaths.length > 0 && (
+              <div>
+                <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Bracket Paths</div>
+                <div className="space-y-3">
+                  {data.futurePaths.map((f, i) => {
+                    const borderColor = f.isUs ? 'border-yellow-700' : 'border-zinc-800';
+                    return (
+                      <div key={i} className={`bg-zinc-900 rounded-xl border p-4 ${borderColor}`}>
+                        <div className="flex-1">
+                          {/* Header: rank + team */}
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <span className="text-xs font-mono text-yellow-500 font-semibold">{f.finishText}</span>
+                            {f.teamAtRank && (
+                              <span className={`text-sm font-semibold ${f.isUs ? 'text-yellow-300' : 'text-zinc-300'}`}>
+                                {f.isUs ? '★ ' : ''}{f.teamAtRank}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Bracket destination + time */}
+                          <div className="font-semibold text-white">{f.nextPlayShort}</div>
+                          {f.bracketDate && (
+                            <div className="text-zinc-500 text-xs">{f.bracketDate}</div>
+                          )}
+                          {(f.court || f.time) && (
+                            <div className="text-zinc-500 text-xs">{[f.court, f.time].filter(Boolean).join(' · ')}</div>
+                          )}
+
+                          {/* Opponent */}
+                          {f.opponentResolved && (
+                            <div className="mt-1.5 text-sm">
+                              <span className="text-zinc-500 text-xs">vs </span>
+                              <span className="text-zinc-200">{f.opponentResolved}</span>
+                            </div>
+                          )}
+
+                          {/* Finish range / destination */}
+                          {f.finishRange && (
+                            <div className="mt-2 bg-zinc-800 rounded-lg px-3 py-2 text-xs space-y-0.5">
+                              {f.finishRange.split('\n').map((line: string, li: number) => (
+                                <div key={li} className={li === 0 ? 'text-emerald-400' : 'text-zinc-400'}>{line}</div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Work */}
+                          {f.workCourt && f.workTime && (
+                            <div className="mt-1.5 text-xs text-zinc-600">Work: {f.workCourt} @ {f.workTime}</div>
+                          )}
                         </div>
-                        <div className="font-semibold text-white text-base">vs {m.opponent}</div>
-                        <div className="text-zinc-600 text-xs mb-2">{m.opponentCode}</div>
-                        <SetScores sets={m.sets} hasScores={m.hasScores} />
                       </div>
-                      {m.weWon !== null && (
-                        <div className={`text-xs font-bold px-2 py-1 rounded shrink-0 ${m.weWon ? 'bg-emerald-900 text-emerald-300' : 'bg-red-900 text-red-300'}`}>
-                          {m.weWon ? 'WIN' : 'LOSS'}
-                        </div>
-                      )}
-                    </div>
-                    <div className="mt-2 text-xs text-zinc-600 border-t border-zinc-800 pt-2">Work team: {m.workTeam}</div>
-                  </div>
-                ))}
+                    );
+                  })}
+                </div>
               </div>
+            )}
+
+            {/* All matches grouped by day */}
+            <div>
+              <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Matches</div>
+              {(() => {
+                const matchesByDate: Record<string, PoolMatch[]> = {};
+                for (const m of data.matches) {
+                  const d = m.date || 'Unknown';
+                  if (!matchesByDate[d]) matchesByDate[d] = [];
+                  matchesByDate[d].push(m);
+                }
+                return Object.entries(matchesByDate).map(([date, dayMatches]) => (
+                  <div key={date} className="mb-6">
+                    <div className="text-xs text-zinc-400 uppercase tracking-wider mb-2 px-1 font-semibold">{date}</div>
+                    <div className="space-y-3">
+                      {dayMatches.map((m, i) => (
+                        <div key={i} className={`bg-zinc-900 rounded-xl border p-4 ${
+                          m.weWon === true ? 'border-emerald-800' :
+                          m.weWon === false ? 'border-red-900' : 'border-zinc-800'
+                        }`}>
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                <span className="text-xs text-zinc-500 font-mono">{m.matchName}</span>
+                                <span className="text-xs text-zinc-600">{m.time}</span>
+                                <span className="text-xs text-zinc-600">{m.court}</span>
+                                {m.isPoolPlay && <span className="text-xs bg-blue-900/50 text-blue-300 px-1.5 py-0.5 rounded">Pool</span>}
+                                {!m.isPoolPlay && <span className="text-xs bg-purple-900/50 text-purple-300 px-1.5 py-0.5 rounded">Bracket</span>}
+                              </div>
+                              <div className="font-semibold text-white text-base">vs {m.opponent}</div>
+                              <SetScores sets={m.sets} hasScores={m.hasScores} />
+                            </div>
+                            {m.weWon !== null && (
+                              <div className={`text-xs font-bold px-2 py-1 rounded shrink-0 ${m.weWon ? 'bg-emerald-900 text-emerald-300' : 'bg-red-900 text-red-300'}`}>
+                                {m.weWon ? 'WIN' : 'LOSS'}
+                              </div>
+                            )}
+                          </div>
+                          {m.workTeam && <div className="mt-2 text-xs text-zinc-600 border-t border-zinc-800 pt-2">Work: {m.workTeam}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ));
+              })()}
             </div>
 
             {/* Work assignments */}
@@ -421,126 +474,37 @@ export default function Home() {
               </div>
             )}
 
-            {/* Bracket Paths — one card per pool finish, facts once known */}
-            {data.futurePaths.length > 0 && (
-              <div>
-                <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Bracket Play</div>
-                <div className="space-y-3">
-                  {data.futurePaths.map((f, i) => {
-                    const isDone = f.hasScores;
-                    const borderColor = f.isUs
-                      ? isDone
-                        ? f.weWon ? 'border-emerald-700' : 'border-red-800'
-                        : 'border-yellow-700'
-                      : 'border-zinc-800';
-                    return (
-                      <div key={i} className={`bg-zinc-900 rounded-xl border p-4 ${borderColor}`}>
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1">
-                            {/* Header: rank + team */}
-                            <div className="flex items-center gap-2 mb-1 flex-wrap">
-                              <span className="text-xs font-mono text-yellow-500 font-semibold">{f.finishText}</span>
-                              {f.teamAtRank && (
-                                <span className={`text-sm font-semibold ${f.isUs ? 'text-yellow-300' : 'text-zinc-300'}`}>
-                                  {f.isUs ? '★ ' : ''}{f.teamAtRank}
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Bracket + time */}
-                            <div className="font-semibold text-white">{f.nextPlayShort}</div>
-                            {(f.court || f.time) && (
-                              <div className="text-zinc-500 text-xs">{[f.court, f.time].filter(Boolean).join(' @ ')}</div>
-                            )}
-
-                            {/* Opponent */}
-                            {f.opponentResolved && (
-                              <div className="mt-1.5 text-sm">
-                                <span className="text-zinc-500 text-xs">vs </span>
-                                <span className="text-zinc-200">{f.opponentResolved}</span>
-                              </div>
-                            )}
-
-                            {/* Scores if played */}
-                            {f.hasScores && f.sets && f.sets.length > 0 && (
-                              <div className="flex gap-2 mt-1.5">
-                                {f.sets.filter(s => s.us !== null && s.them !== null).map((s, si) => {
-                                  const weWonSet = (s.us ?? 0) > (s.them ?? 0);
-                                  return (
-                                    <span key={si} className={`text-sm font-mono px-2 py-0.5 rounded ${weWonSet ? 'bg-emerald-900 text-emerald-300' : 'bg-red-900 text-red-300'}`}>
-                                      {s.us}-{s.them}
-                                    </span>
-                                  );
-                                })}
-                              </div>
-                            )}
-
-                            {/* Sunday destination */}
-                            {f.finishRange && (
-                              <div className={`mt-2 bg-zinc-800 rounded-lg px-3 py-2 text-xs ${f.saturdayEvening ? 'space-y-0.5' : ''}`}>
-                                {f.saturdayEvening ? f.finishRange.split('\n').map((line, li) => (
-                                  <div key={li} className={li === 0 ? 'text-emerald-400' : 'text-zinc-400'}>{line}</div>
-                                )) : (
-                                  <div className="text-zinc-400">{f.finishRange}</div>
-                                )}
-                              </div>
-                            )}
-
-                            {/* Work */}
-                            {f.workCourt && f.workTime && (
-                              <div className="mt-1.5 text-xs text-zinc-600">Work: {f.workCourt} @ {f.workTime}</div>
-                            )}
-                          </div>
-
-                          {/* Result badge */}
-                          {f.isUs && (
-                            <div className={`text-xs font-bold px-2 py-1 rounded shrink-0 ${
-                              isDone
-                                ? f.weWon ? 'bg-emerald-900 text-emerald-300' : 'bg-red-900 text-red-300'
-                                : f.saturdayEvening ? 'bg-zinc-700 text-zinc-300' : 'bg-zinc-800 text-zinc-500'
-                            }`}>
-                              {isDone ? (f.weWon ? 'WIN' : 'LOSS') : f.saturdayEvening ? 'Tonight' : 'Sunday'}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Active Sunday Bracket — round-by-round view */}
-            {data.activeSundayBracket && (
+            {/* Active Bracket — round-by-round view */}
+            {data.activeBracket && (
               <div>
                 <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">
-                  Sunday Bracket — {data.activeSundayBracket.bracketName}
+                  Bracket Play — {data.activeBracket.bracketName}
                 </div>
                 <div className="space-y-4">
                   {/* Header card */}
                   <div className="bg-zinc-900 rounded-xl border border-yellow-700 px-4 py-3">
-                    <div className="font-bold text-white">{data.activeSundayBracket.bracketName}</div>
-                    <div className="text-zinc-500 text-xs">{data.activeSundayBracket.completeName}</div>
-                    {data.activeSundayBracket.finishRange && (
+                    <div className="font-bold text-white">{data.activeBracket.bracketName}</div>
+                    <div className="text-zinc-500 text-xs">{data.activeBracket.completeName}</div>
+                    {data.activeBracket.finishRange && (
                       <div className="mt-1 text-xs">
                         <span className="text-zinc-500">Finish range: </span>
-                        <span className="text-emerald-400">{data.activeSundayBracket.finishRange.best}</span>
+                        <span className="text-emerald-400">{data.activeBracket.finishRange.best}</span>
                         <span className="text-zinc-500"> – </span>
-                        <span className="text-zinc-400">{data.activeSundayBracket.finishRange.worst}</span>
+                        <span className="text-zinc-400">{data.activeBracket.finishRange.worst}</span>
                         <span className="text-zinc-500"> of 64</span>
                       </div>
                     )}
                   </div>
 
                   {/* Championship path — Round of 16 → Quarters → Semis → Championship */}
-                  {data.activeSundayBracket.winnersRounds.map((round, ri) => (
+                  {data.activeBracket.winnersRounds.map((round, ri) => (
                     <div key={ri}>
                       <div className="flex items-center gap-2 mb-2 px-1">
-                        <div className={`h-px flex-1 ${ri === data.activeSundayBracket!.winnersRounds.length - 1 ? 'bg-yellow-700' : 'bg-emerald-900'}`} />
-                        <span className={`text-xs font-bold uppercase tracking-widest ${ri === data.activeSundayBracket!.winnersRounds.length - 1 ? 'text-yellow-500' : 'text-emerald-700'}`}>
-                          {ri === data.activeSundayBracket!.winnersRounds.length - 1 ? '🏆 ' : ''}{round.label}
+                        <div className={`h-px flex-1 ${ri === data.activeBracket!.winnersRounds.length - 1 ? 'bg-yellow-700' : 'bg-emerald-900'}`} />
+                        <span className={`text-xs font-bold uppercase tracking-widest ${ri === data.activeBracket!.winnersRounds.length - 1 ? 'text-yellow-500' : 'text-emerald-700'}`}>
+                          {ri === data.activeBracket!.winnersRounds.length - 1 ? '🏆 ' : ''}{round.label}
                         </span>
-                        <div className={`h-px flex-1 ${ri === data.activeSundayBracket!.winnersRounds.length - 1 ? 'bg-yellow-700' : 'bg-emerald-900'}`} />
+                        <div className={`h-px flex-1 ${ri === data.activeBracket!.winnersRounds.length - 1 ? 'bg-yellow-700' : 'bg-emerald-900'}`} />
                       </div>
                       <div className="space-y-2 mb-4">
                         {round.matches.map((m, mi) => renderMatch(m, mi, data.teamCode))}
@@ -549,7 +513,7 @@ export default function Home() {
                   ))}
 
                   {/* Placement matches — shown collapsed at the bottom */}
-                  {data.activeSundayBracket.placementMatches.length > 0 && (
+                  {data.activeBracket.placementMatches.length > 0 && (
                     <div>
                       <div className="flex items-center gap-2 mb-2 px-1">
                         <div className="h-px flex-1 bg-zinc-800" />
@@ -557,7 +521,7 @@ export default function Home() {
                         <div className="h-px flex-1 bg-zinc-800" />
                       </div>
                       <div className="space-y-2">
-                        {data.activeSundayBracket.placementMatches.map((m, mi) => renderMatch(m, mi, data.teamCode))}
+                        {data.activeBracket.placementMatches.map((m, mi) => renderMatch(m, mi, data.teamCode))}
                       </div>
                     </div>
                   )}
@@ -610,14 +574,6 @@ export default function Home() {
             {/* Footer */}
             <div className="text-center text-zinc-700 text-xs pb-4 space-y-2">
               <div>{data.teamCode} · {data.division} · Auto-refreshes every 90s</div>
-              <div>
-                <a
-                  href="/previous"
-                  className="text-zinc-600 hover:text-zinc-400 underline transition-colors"
-                >
-                  View previous tournament → Salt Lake City Showdown (May 1-3)
-                </a>
-              </div>
             </div>
           </>
         )}
