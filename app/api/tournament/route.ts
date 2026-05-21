@@ -60,6 +60,12 @@ function stripLocationCode(name: string): string {
   return name.replace(/\s*\([A-Z]{2}\)\s*$/, '').trim();
 }
 
+// Strip ALL trailing parenthetical suffixes: location codes + explicit ranks
+// e.g. "Roots 14-2 Blue (LS) (37)" → "Roots 14-2 Blue"
+function stripAllSuffixes(name: string): string {
+  return name.replace(/(\s*\([^)]+\))+\s*$/, '').trim();
+}
+
 // Extract all team text references from a bracket play's tree
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function extractAllSources(play: any): Set<string> {
@@ -291,7 +297,7 @@ export async function GET(req: Request) {
         const sources = extractAllSources(play);
         let found = false;
         for (const source of sources) {
-          if (source === searchText || source.includes(searchText) || stripLocationCode(source) === stripLocationCode(searchText)) {
+          if (source === searchText || source.includes(searchText) || stripLocationCode(source) === stripLocationCode(searchText) || stripAllSuffixes(source) === stripAllSuffixes(searchText)) {
             found = true;
             break;
           }
