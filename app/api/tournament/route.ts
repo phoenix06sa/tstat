@@ -276,10 +276,6 @@ export async function GET(req: Request) {
     const sortedStandings = [...rawTeams].sort((a: any, b: any) => (a.FinishRank ?? 99) - (b.FinishRank ?? 99));
     const poolNumber = ourPool.FullName?.match(/Pool (\d+)/)?.[1] || ourPool.ShortName?.replace('P', '') || '?';
 
-    // Find brackets on the same day or next day that reference our pool's teams
-    // Brackets are Type=1 plays. After pool play, AES fills in actual team names.
-    // Before pool play completes, brackets show tags like "1st-P5", "2nd-P5", etc.
-
     // Collect ALL brackets across all days for lookup
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const allBrackets: { date: string; play: any }[] = [];
@@ -291,44 +287,8 @@ export async function GET(req: Request) {
       }
     }
 
-    // Find which bracket a team/tag appears in
-    const findBracketForTeamOrTag = (searchText: string): { bracketName: string; court: string; time: string; date: string } | null => {
-      for (const { date, play } of allBrackets) {
-        const sources = extractAllSources(play);
-        let found = false;
-        for (const source of sources) {
-          if (source === searchText || source.includes(searchText) || stripLocationCode(source) === stripLocationCode(searchText) || stripAllSuffixes(source) === stripAllSuffixes(searchText)) {
-            found = true;
-            break;
-          }
-        }
-        if (!found) continue;
-        // Found bracket — get court/time from root match
-        const rootMatch = play.Roots?.[0]?.Match;
-        return {
-          bracketName: play.FullName || play.CompleteFullName,
-          court: rootMatch?.Court?.Name || '',
-          time: fmtTime(rootMatch?.ScheduledStartDateTime || ''),
-          date: fmtDate(rootMatch?.ScheduledStartDateTime || date),
-        };
-      }
-      return null;
-    };
-
-    // Find Sunday/final bracket destination for winner/loser of a bracket match
-    const findFinalBracketForTag = (tag: string): { bracketName: string } | null => {
-      // Look in the last day's brackets for this tag
-      const lastDay = allDaysPlays[allDaysPlays.length - 1];
-      if (!lastDay) return null;
-      const finalBrackets = lastDay.plays.filter((p: { PlayType: number }) => p.PlayType === 1);
-      for (const b of finalBrackets) {
-        const sources = extractAllSources(b);
-        if (sources.has(tag)) return { bracketName: b.FullName };
-      }
-      return null;
-    };
-
-    // Build bracket finish range map dynamically from final day brackets
+    // Build bracket finish range map dynamically from bracket plays
+    // Use the last day's brackets as the "final" brackets for ranking
     const finalDay = allDaysPlays[allDaysPlays.length - 1];
     const finalBrackets = finalDay ? finalDay.plays.filter((p: { PlayType: number }) => p.PlayType === 1) : [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -342,6 +302,241 @@ export async function GET(req: Request) {
       rankOffset += teamCount;
     }
 
+    // Parse pool rank reference from a bracket team text.
+    // AES uses inconsistent formats across tournaments, so we try multiple patterns:
+    //   "1st-R1 D1 Pool 1  (1)"  → { rank: 1, poolNum: "1" }
+    //   "2nd-P5"                  → { rank: 2, poolNum: "5" }
+    //   "3rd-R1 D1 Pool 3  (9)"  → { rank: 3, poolNum: "3" }
+    //   "1st Place Pool 2"       → { rank: 1, poolNum: "2" }
+    //   "Pool 1 - 1st"           → { rank: 1, poolNum: "1" }
+    function parsePoolRef(text: string): { rank: number; poolNum: string } | null {
+      // Format: "Nth-R... Pool X (...)" or "Nth-...Pool X..."
+      const longMatch = text.match(/^(\d+)(?:st|nd|rd|th)-.*Pool\s+(\d+)/i);
+      if (longMatch) return { rank: parseInt(longMatch[1]), poolNum: longMatch[2] };
+      // Format: "Nth-PX"
+      const shortMatch = text.match(/^(\d+)(?:st|nd|rd|th)-P(\d+)/i);
+      if (shortMatch) return { rank: parseInt(shortMatch[1]), poolNum: shortMatch[2] };
+      // Format: "Nth Place Pool X" or "Nth-Place Pool X"
+      const placeMatch = text.match(/^(\d+)(?:st|nd|rd|th)[\s-]+(?:place\s+)?Pool\s+(\d+)/i);
+      if (placeMatch) return { rank: parseInt(placeMatch[1]), poolNum: placeMatch[2] };
+      // Format: "Pool X - Nth" or "Pool X Nth"
+      const reverseMatch = text.match(/Pool\s+(\d+)\s*[-–]?\s*(\d+)(?:st|nd|rd|th)/i);
+      if (reverseMatch) return { rank: parseInt(reverseMatch[2]), poolNum: reverseMatch[1] };
+      // Broad fallback: any text containing both an ordinal and "P" or "Pool" + number
+      const broadMatch = text.match(/(\d+)(?:st|nd|rd|th).*?(?:Pool|P)\s*(\d+)/i);
+      if (broadMatch) return { rank: parseInt(broadMatch[1]), poolNum: broadMatch[2] };
+      return null;
+    }
+
+    // Walk bracket tree to get all leaf-level matchup team texts
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    function getLeafMatchups(node: any): { t1: string; t2: string; court: string; time: string }[] {
+      if (!node) return [];
+      const m = node.get ? undefined : (node.Match || {});
+      if (!m) return [];
+      const ts = node.TopSource;
+      const bs = node.BottomSource;
+      if (!ts && !bs) {
+        return [{ t1: m.FirstTeamText || '', t2: m.SecondTeamText || '', court: m.Court?.Name || '', time: m.ScheduledStartDateTime || '' }];
+      }
+      const results: { t1: string; t2: string; court: string; time: string }[] = [];
+      if (ts) results.push(...getLeafMatchups(ts));
+      else results.push({ t1: m.FirstTeamText || '', t2: '', court: m.Court?.Name || '', time: m.ScheduledStartDateTime || '' });
+      if (bs) results.push(...getLeafMatchups(bs));
+      else results.push({ t1: '', t2: m.SecondTeamText || '', court: m.Court?.Name || '', time: m.ScheduledStartDateTime || '' });
+      return results;
+    }
+
+    // Build a map: poolNum_rank → { bracketName, matchups, court, time, date }
+    // by parsing leaf-level team texts in each bracket
+    type BracketMapping = {
+      bracketName: string;
+      court: string;
+      time: string;
+      date: string;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      matchups: { t1: string; t2: string; t1Pool: any; t2Pool: any; court: string; time: string }[];
+      seed: number | null;
+      opponentRef: string | null;
+    };
+    const poolRankToBracket: Record<string, BracketMapping> = {};
+
+    // Ordinal helper
+    const ordinal = (n: number) => n === 1 ? '1st' : n === 2 ? '2nd' : n === 3 ? '3rd' : `${n}th`;
+
+    // Build full bracket tree structure for display (round-by-round)
+    type BracketRound = { label: string; matches: { matchName: string; team1: string; team2: string; court: string; time: string; isPlacement: boolean; hasUs: boolean }[] };
+    const bracketTrees: Record<string, { rounds: BracketRound[]; teamCount: number }> = {};
+
+    // Helper: format a team text reference into a display-friendly name
+    const formatTeamDisplay = (text: string): string => {
+      if (!text) return 'TBD';
+      if (text.startsWith('Winner of') || text.startsWith('Loser of')) return text;
+      const ref = parsePoolRef(text);
+      if (ref) {
+        // Check if pool play is done for this pool — try to resolve to actual team
+        const pool = allDaysPlays.flatMap(d => d.plays).filter((p: { PlayType: number }) => p.PlayType === 0)
+          .find((p: { FullName: string }) => p.FullName?.match(/Pool (\d+)/)?.[1] === ref.poolNum);
+        if (pool) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const teams = [...(pool.Teams || [])].sort((a: any, b: any) => (a.FinishRank ?? 99) - (b.FinishRank ?? 99));
+          const team = teams[ref.rank - 1];
+          if (team?.FinishRank !== null && team?.FinishRank !== undefined) {
+            return team.TeamName;
+          }
+        }
+        return `${ordinal(ref.rank)} Pool ${ref.poolNum}`;
+      }
+      return stripAllSuffixes(text);
+    };
+
+    // Helper: check if a team text references our team or pool position
+    const isOurTeamRef = (text: string, poolRank?: number): boolean => {
+      if (!text) return false;
+      const ref = parsePoolRef(text);
+      if (ref && ref.poolNum === poolNumber) {
+        // Could be any of our pool ranks — mark for ALL our possible positions
+        return true;
+      }
+      // Check actual team name
+      if (text.toLowerCase().includes(teamCode.toLowerCase())) return true;
+      const stripped = stripAllSuffixes(text).toLowerCase();
+      if (stripped === TEAM_NAME.toLowerCase()) return true;
+      return false;
+    };
+
+    for (const { date, play } of allBrackets) {
+      const bracketName = play.FullName || play.CompleteFullName;
+      const rootMatch = play.Roots?.[0]?.Match;
+      const bracketCourt = rootMatch?.Court?.Name || '';
+      const bracketTime = fmtTime(rootMatch?.ScheduledStartDateTime || '');
+      const bracketDate = fmtDate(rootMatch?.ScheduledStartDateTime || date);
+
+      // Walk bracket tree collecting matches by depth
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const matchesByDepth: Record<number, { matchName: string; team1: string; team2: string; court: string; time: string; isPlacement: boolean; hasUs: boolean }[]> = {};
+      let maxDepth = 0;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const walkTree = (node: any, depth: number, isPlacement: boolean) => {
+        if (!node) return;
+        const m = node.Match || {};
+        const t1 = m.FirstTeamText || '';
+        const t2 = m.SecondTeamText || '';
+        if (!t1 && !t2) return;
+        if (!matchesByDepth[depth]) matchesByDepth[depth] = [];
+        if (depth > maxDepth) maxDepth = depth;
+        matchesByDepth[depth].push({
+          matchName: m.FullName || '',
+          team1: formatTeamDisplay(t1),
+          team2: formatTeamDisplay(t2),
+          court: m.Court?.Name || '',
+          time: fmtTime(m.ScheduledStartDateTime || ''),
+          isPlacement,
+          hasUs: isOurTeamRef(t1) || isOurTeamRef(t2),
+        });
+        walkTree(node.TopSource, depth + 1, isPlacement);
+        walkTree(node.BottomSource, depth + 1, isPlacement);
+      };
+
+      const roots = play.Roots || [];
+      // First root is typically the championship match tree
+      if (roots[0]) walkTree(roots[0], 0, false);
+      // Remaining roots are placement matches (losers brackets)
+      for (let ri = 1; ri < roots.length; ri++) {
+        walkTree(roots[ri], 0, true);
+      }
+
+      // Build rounds from deepest (first round) to shallowest (finals)
+      const rounds: BracketRound[] = [];
+      const roundNames = (depth: number, max: number): string => {
+        const fromFinal = depth;  // 0 = final, 1 = semi, 2 = quarter, etc.
+        if (fromFinal === 0) return 'Finals';
+        if (fromFinal === 1) return 'Semifinals';
+        if (fromFinal === 2) return 'Quarterfinals';
+        return `Round of ${Math.pow(2, fromFinal + 1)}`;
+      };
+
+      // Championship rounds (deepest first = earliest round)
+      for (let d = maxDepth; d >= 0; d--) {
+        const matches = (matchesByDepth[d] || []).filter(m => !m.isPlacement);
+        if (matches.length > 0) {
+          rounds.push({ label: roundNames(d, maxDepth), matches });
+        }
+      }
+
+      // Placement matches
+      const placementMatches = Object.values(matchesByDepth).flat().filter(m => m.isPlacement);
+      if (placementMatches.length > 0) {
+        rounds.push({ label: 'Placement', matches: placementMatches });
+      }
+
+      const leafCount = (matchesByDepth[maxDepth] || []).filter(m => !m.isPlacement).length;
+      bracketTrees[bracketName] = { rounds, teamCount: leafCount * 2 };
+
+      // Get all leaf matchups for pool-rank mapping
+      const allLeafMatchups: { t1: string; t2: string; court: string; time: string }[] = [];
+      for (const r of roots) {
+        allLeafMatchups.push(...getLeafMatchups(r));
+      }
+
+      // Parse each team text and map pool references to this bracket
+      for (const matchup of allLeafMatchups) {
+        const t1Ref = parsePoolRef(matchup.t1);
+        const t2Ref = parsePoolRef(matchup.t2);
+
+        // Extract seed from parenthetical suffix: "1st-R1 D1 Pool 1  (1)" → seed 1
+        const t1Seed = matchup.t1.match(/\((\d+)\)\s*$/)?.[1];
+        const t2Seed = matchup.t2.match(/\((\d+)\)\s*$/)?.[1];
+
+        if (t1Ref) {
+          const key = `${t1Ref.poolNum}_${t1Ref.rank}`;
+          if (!poolRankToBracket[key]) {
+            poolRankToBracket[key] = {
+              bracketName, court: matchup.court || bracketCourt,
+              time: fmtTime(matchup.time) || bracketTime, date: bracketDate,
+              matchups: allLeafMatchups.map(lm => ({ t1: lm.t1, t2: lm.t2, t1Pool: parsePoolRef(lm.t1), t2Pool: parsePoolRef(lm.t2), court: lm.court, time: lm.time })),
+              seed: t1Seed ? parseInt(t1Seed) : null,
+              opponentRef: matchup.t2 || null,
+            };
+          }
+        }
+        if (t2Ref) {
+          const key = `${t2Ref.poolNum}_${t2Ref.rank}`;
+          if (!poolRankToBracket[key]) {
+            poolRankToBracket[key] = {
+              bracketName, court: matchup.court || bracketCourt,
+              time: fmtTime(matchup.time) || bracketTime, date: bracketDate,
+              matchups: allLeafMatchups.map(lm => ({ t1: lm.t1, t2: lm.t2, t1Pool: parsePoolRef(lm.t1), t2Pool: parsePoolRef(lm.t2), court: lm.court, time: lm.time })),
+              seed: t2Seed ? parseInt(t2Seed) : null,
+              opponentRef: matchup.t1 || null,
+            };
+          }
+        }
+      }
+    }
+
+    // Also try matching by team name/code for completed pool play
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    function findBracketForTeam(teamText: string, teamName: string): { bracketName: string; court: string; time: string; date: string } | null {
+      for (const { date, play } of allBrackets) {
+        const sources = extractAllSources(play);
+        for (const source of sources) {
+          if (source === teamText || stripLocationCode(source) === stripLocationCode(teamText) ||
+              stripAllSuffixes(source) === stripAllSuffixes(teamText) ||
+              (teamName && (source.includes(teamName) || stripLocationCode(source) === teamName))) {
+            const rootMatch = play.Roots?.[0]?.Match;
+            return {
+              bracketName: play.FullName || play.CompleteFullName,
+              court: rootMatch?.Court?.Name || '',
+              time: fmtTime(rootMatch?.ScheduledStartDateTime || ''),
+              date: fmtDate(rootMatch?.ScheduledStartDateTime || date),
+            };
+          }
+        }
+      }
+      return null;
+    }
+
     // Build future paths for each pool rank (1st through last)
     const poolSize = rawTeams.length;
     for (let poolRank = 1; poolRank <= poolSize; poolRank++) {
@@ -350,27 +545,28 @@ export async function GET(req: Request) {
       const isUs = teamAtRank?.TeamCode?.toLowerCase() === teamCode.toLowerCase();
       const poolPlayComplete = teamAtRank?.FinishRank !== null;
       const rankSuffix = poolRank === 1 ? 'st' : poolRank === 2 ? 'nd' : poolRank === 3 ? 'rd' : 'th';
-      const finishText = `${poolRank}${rankSuffix}-P${poolNumber}`;
+      const finishText = `${poolRank}${rankSuffix} in Pool`;
       const displayTeamName = poolPlayComplete ? (teamAtRank?.TeamName || '') : `${poolRank}${rankSuffix} place (TBD)`;
 
-      // Search for the bracket this team goes to
-      // Try tag format first (before pool play completes): "1st-P5", "2nd-P5"
-      const rankTag = `${poolRank}${rankSuffix}-P${poolNumber}`;
-      // After pool play: search by actual team name with location code
-      const teamText = teamAtRank?.TeamText || (teamAtRank?.TeamName ? `${teamAtRank.TeamName}` : '');
+      // Look up bracket from our pool-rank-to-bracket map
+      const mapKey = `${poolNumber}_${poolRank}`;
+      const mappedBracket = poolRankToBracket[mapKey];
 
-      let bracketInfo = findBracketForTeamOrTag(rankTag);
-      if (!bracketInfo && teamText && poolPlayComplete) {
-        bracketInfo = findBracketForTeamOrTag(teamText);
+      // Fallback: if pool play is complete, search by team name
+      let bracketInfo: { bracketName: string; court: string; time: string; date: string } | null = null;
+      if (mappedBracket) {
+        bracketInfo = { bracketName: mappedBracket.bracketName, court: mappedBracket.court, time: mappedBracket.time, date: mappedBracket.date };
+      } else if (poolPlayComplete && teamAtRank) {
+        const teamText = teamAtRank.TeamText || teamAtRank.TeamName || '';
+        bracketInfo = findBracketForTeam(teamText, teamAtRank.TeamName);
       }
 
-      // Determine finish range
+      // Determine finish range with ranking prediction
       let finishRange = '';
       if (bracketInfo) {
         const range = bracketFinishRanges[bracketInfo.bracketName];
         if (range) {
-          const ordinal = (n: number) => n === 1 ? '1st' : n === 2 ? '2nd' : n === 3 ? '3rd' : `${n}th`;
-          finishRange = `${bracketInfo.bracketName} · best ${ordinal(range.best)}, worst ${ordinal(range.worst)}`;
+          finishRange = `${bracketInfo.bracketName}\nFinish: ${ordinal(range.best)} – ${ordinal(range.worst)} overall`;
         } else {
           finishRange = bracketInfo.bracketName;
         }
@@ -378,134 +574,63 @@ export async function GET(req: Request) {
         finishRange = 'Bracket TBD';
       }
 
-      // Find opponent in bracket
+      // Find opponent in bracket (from the leaf matchup)
       let opponentResolved = '';
-      if (bracketInfo && poolPlayComplete && teamText) {
+      if (mappedBracket?.opponentRef) {
+        // Parse opponent reference - could be a pool ref or actual team
+        const oppPoolRef = parsePoolRef(mappedBracket.opponentRef);
+        if (oppPoolRef) {
+          // Find which team is at that pool/rank (if pool play is complete)
+          const oppPool = allDaysPlays.flatMap(d => d.plays).filter((p: { PlayType: number }) => p.PlayType === 0)
+            .find((p: { FullName: string }) => p.FullName?.match(/Pool (\d+)/)?.[1] === oppPoolRef.poolNum);
+          if (oppPool) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const oppTeams = [...(oppPool.Teams || [])].sort((a: any, b: any) => (a.FinishRank ?? 99) - (b.FinishRank ?? 99));
+            const oppTeam = oppTeams[oppPoolRef.rank - 1];
+            if (oppTeam?.FinishRank !== null && oppTeam?.FinishRank !== undefined) {
+              opponentResolved = oppTeam.TeamName;
+            } else {
+              opponentResolved = `${ordinal(oppPoolRef.rank)} in Pool ${oppPoolRef.poolNum}`;
+            }
+          } else {
+            opponentResolved = `${ordinal(oppPoolRef.rank)} in Pool ${oppPoolRef.poolNum}`;
+          }
+        } else if (!mappedBracket.opponentRef.startsWith('Loser of') && !mappedBracket.opponentRef.startsWith('Winner of')) {
+          opponentResolved = stripAllSuffixes(mappedBracket.opponentRef);
+        }
+      } else if (bracketInfo && poolPlayComplete && teamAtRank) {
+        // Search bracket tree for opponent by team name
+        const teamText = teamAtRank.TeamText || teamAtRank.TeamName || '';
         for (const { play } of allBrackets) {
           if (play.FullName !== bracketInfo.bracketName) continue;
-          for (const r of (play.Roots || [])) {
-            const m = r.Match || {};
-            const t1: string = m.FirstTeamText || '';
-            const t2: string = m.SecondTeamText || '';
-            if (stripLocationCode(t1) === stripLocationCode(teamText) || t1.includes(teamAtRank?.TeamName)) {
-              opponentResolved = stripLocationCode(t2);
-            } else if (stripLocationCode(t2) === stripLocationCode(teamText) || t2.includes(teamAtRank?.TeamName)) {
-              opponentResolved = stripLocationCode(t1);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const checkNode = (node: any): string => {
+            if (!node) return '';
+            const nm = node.Match || {};
+            const nt1: string = nm.FirstTeamText || '';
+            const nt2: string = nm.SecondTeamText || '';
+            if (stripLocationCode(nt1) === stripLocationCode(teamText) || nt1.includes(teamAtRank.TeamName)) {
+              return stripLocationCode(nt2);
             }
-            // Also check sub-matches
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const checkNode = (node: any): string => {
-              if (!node) return '';
-              const nm = node.Match || {};
-              const nt1: string = nm.FirstTeamText || '';
-              const nt2: string = nm.SecondTeamText || '';
-              if (stripLocationCode(nt1) === stripLocationCode(teamText) || nt1.includes(teamAtRank?.TeamName)) {
-                return stripLocationCode(nt2);
-              }
-              if (stripLocationCode(nt2) === stripLocationCode(teamText) || nt2.includes(teamAtRank?.TeamName)) {
-                return stripLocationCode(nt1);
-              }
-              return checkNode(node.TopSource) || checkNode(node.BottomSource);
-            };
-            if (!opponentResolved) opponentResolved = checkNode(r.TopSource) || checkNode(r.BottomSource);
+            if (stripLocationCode(nt2) === stripLocationCode(teamText) || nt2.includes(teamAtRank.TeamName)) {
+              return stripLocationCode(nt1);
+            }
+            return checkNode(node.TopSource) || checkNode(node.BottomSource);
+          };
+          for (const r of (play.Roots || [])) {
+            opponentResolved = checkNode(r) || checkNode(r.TopSource) || checkNode(r.BottomSource);
+            if (opponentResolved) break;
           }
           break;
         }
       }
 
-      // Find where winner/loser of the intermediate bracket end up in the final brackets.
-      // Approach 1: Trace actual teams via FutureRoundMatches rank results → find in final brackets.
-      // Approach 2 (fallback): Look for Tags like "Winner of XBrkt#1M1" in final brackets.
-      let nextDestination = '';
-      if (bracketInfo) {
-        // Find the intermediate bracket's FutureRoundMatches to get winner/loser team names
-        let intermediateBracketPlay = null;
-        for (const { play } of allBrackets) {
-          if (play.FullName === bracketInfo.bracketName) { intermediateBracketPlay = play; break; }
-        }
+      // Get full bracket tree for display
+      const bracketRounds = bracketInfo ? (bracketTrees[bracketInfo.bracketName]?.rounds || []) : [];
+      const bracketTeamCount = bracketInfo ? (bracketTrees[bracketInfo.bracketName]?.teamCount || 0) : 0;
 
-        if (intermediateBracketPlay) {
-          const frms = intermediateBracketPlay.FutureRoundMatches || [];
-          const rankedFrms = frms.filter((f: { RankText: string }) => f.RankText);
-
-          // If this bracket has ranked results, trace where each rank's team goes in final brackets
-          if (rankedFrms.length >= 2) {
-            const winnerRt: string = rankedFrms[0]?.RankText || '';
-            const loserRt: string = rankedFrms[1]?.RankText || '';
-
-            const extractTeam = (rt: string): string => {
-              const mtch = rt.match(/^\d+\s*-\s*(.+)$/);
-              if (!mtch) return '';
-              let name = mtch[1].trim().replace(/\s*\(\d+\)\s*$/, ''); // strip explicit rank
-              return name;
-            };
-
-            const winnerTeam = extractTeam(winnerRt);
-            const loserTeam = extractTeam(loserRt);
-
-            // Find which final bracket each team appears in
-            const findFinalBracketForTeam = (teamSearch: string): string | null => {
-              if (!teamSearch || teamSearch.startsWith('Winner of') || teamSearch.startsWith('Loser of')) return null;
-              const stripped = stripLocationCode(teamSearch).toLowerCase();
-              for (const fb of finalBrackets) {
-                const frm = fb.FutureRoundMatches || [];
-                for (const f of frm) {
-                  const rt: string = f.RankText || '';
-                  if (rt.toLowerCase().includes(stripped)) return fb.FullName;
-                }
-                // Also check match team texts
-                const sources = extractAllSources(fb);
-                for (const src of sources) {
-                  if (stripLocationCode(src).toLowerCase() === stripped) return fb.FullName;
-                }
-              }
-              return null;
-            };
-
-            const winDest = findFinalBracketForTeam(winnerTeam);
-            const loseDest = findFinalBracketForTeam(loserTeam);
-
-            if (winDest || loseDest) {
-              // If both go to the same bracket, it IS the final bracket (no intermediate step)
-              if (winDest && loseDest && winDest === loseDest) {
-                // Don't show Win/Lose when the intermediate bracket IS the final bracket
-              } else {
-                const parts: string[] = [];
-                if (winDest) {
-                  const wr = bracketFinishRanges[winDest];
-                  parts.push(`Win → ${winDest}${wr ? ` (${wr.best}-${wr.worst})` : ''}`);
-                }
-                if (loseDest) {
-                  const lr = bracketFinishRanges[loseDest];
-                  parts.push(`Lose → ${loseDest}${lr ? ` (${lr.best}-${lr.worst})` : ''}`);
-                }
-                nextDestination = parts.join('\n');
-              }
-            }
-          }
-        }
-
-        // Fallback: try Tag-based approach for unplayed tournaments
-        if (!nextDestination) {
-          const brktShortName = bracketInfo.bracketName.replace(/^.*?(Challenge Bracket|Cross Bracket|Cross-Pool Match)/, '$1');
-          const winTag = `Winner of ${brktShortName.replace('Bracket #', 'Brkt#').replace('Bracket#', 'Brkt#')}M1`;
-          const loseTag = `Loser of ${brktShortName.replace('Bracket #', 'Brkt#').replace('Bracket#', 'Brkt#')}M1`;
-          const winDest = findFinalBracketForTag(winTag);
-          const loseDest = findFinalBracketForTag(loseTag);
-          if (winDest || loseDest) {
-            const parts: string[] = [];
-            if (winDest) {
-              const wr = bracketFinishRanges[winDest.bracketName];
-              parts.push(`Win → ${winDest.bracketName}${wr ? ` (${wr.best}-${wr.worst})` : ''}`);
-            }
-            if (loseDest) {
-              const lr = bracketFinishRanges[loseDest.bracketName];
-              parts.push(`Lose → ${loseDest.bracketName}${lr ? ` (${lr.best}-${lr.worst})` : ''}`);
-            }
-            nextDestination = parts.join('\n');
-          }
-        }
-      }
+      // Seed info
+      const seed = mappedBracket?.seed ?? null;
 
       futurePaths.push({
         finishText,
@@ -520,7 +645,10 @@ export async function GET(req: Request) {
         workCourt: '',
         workTime: '',
         opponentResolved,
-        finishRange: nextDestination || finishRange,
+        finishRange,
+        seed,
+        bracketRounds,
+        bracketTeamCount,
       });
     }
 

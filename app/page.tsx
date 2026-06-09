@@ -10,6 +10,8 @@ interface PoolMatch {
   hasScores: boolean; sets: SetScore[]; weWon: boolean | null; isPoolPlay: boolean;
 }
 interface WorkAssignment { play: string; time: string; date: string; court: string }
+interface BracketRoundMatch { matchName: string; team1: string; team2: string; court: string; time: string; isPlacement: boolean; hasUs: boolean }
+interface BracketRound { label: string; matches: BracketRoundMatch[] }
 interface FuturePath {
   finishText: string; rank: number; isUs?: boolean; teamAtRank?: string;
   nextPlay: string; nextPlayShort: string;
@@ -19,6 +21,9 @@ interface FuturePath {
   note?: string;
   opponentResolved?: string;
   finishRange?: string;
+  seed?: number | null;
+  bracketRounds?: BracketRound[];
+  bracketTeamCount?: number;
 }
 interface ActiveBracketMatch {
   matchId: number; matchName: string; time: string; court: string;
@@ -352,67 +357,9 @@ export default function Home() {
               </div>
             )}
 
-            {/* Bracket Paths — where each pool finish rank leads */}
-            {data.futurePaths.length > 0 && (
-              <div>
-                <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Bracket Paths</div>
-                <div className="space-y-3">
-                  {data.futurePaths.map((f, i) => {
-                    const borderColor = f.isUs ? 'border-yellow-700' : 'border-zinc-800';
-                    return (
-                      <div key={i} className={`bg-zinc-900 rounded-xl border p-4 ${borderColor}`}>
-                        <div className="flex-1">
-                          {/* Header: rank + team */}
-                          <div className="flex items-center gap-2 mb-1 flex-wrap">
-                            <span className="text-xs font-mono text-yellow-500 font-semibold">{f.finishText}</span>
-                            {f.teamAtRank && (
-                              <span className={`text-sm font-semibold ${f.isUs ? 'text-yellow-300' : 'text-zinc-300'}`}>
-                                {f.isUs ? '★ ' : ''}{f.teamAtRank}
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Bracket destination + time */}
-                          <div className="font-semibold text-white">{f.nextPlayShort}</div>
-                          {f.bracketDate && (
-                            <div className="text-zinc-500 text-xs">{f.bracketDate}</div>
-                          )}
-                          {(f.court || f.time) && (
-                            <div className="text-zinc-500 text-xs">{[f.court, f.time].filter(Boolean).join(' · ')}</div>
-                          )}
-
-                          {/* Opponent */}
-                          {f.opponentResolved && (
-                            <div className="mt-1.5 text-sm">
-                              <span className="text-zinc-500 text-xs">vs </span>
-                              <span className="text-zinc-200">{f.opponentResolved}</span>
-                            </div>
-                          )}
-
-                          {/* Finish range / destination */}
-                          {f.finishRange && (
-                            <div className="mt-2 bg-zinc-800 rounded-lg px-3 py-2 text-xs space-y-0.5">
-                              {f.finishRange.split('\n').map((line: string, li: number) => (
-                                <div key={li} className={li === 0 ? 'text-emerald-400' : 'text-zinc-400'}>{line}</div>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Work */}
-                          {f.workCourt && f.workTime && (
-                            <div className="mt-1.5 text-xs text-zinc-600">Work: {f.workCourt} @ {f.workTime}</div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* All matches grouped by day */}
+            {/* Pool Play matches */}
             <div>
-              <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Matches</div>
+              <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Pool Play</div>
               {(() => {
                 const matchesByDate: Record<string, PoolMatch[]> = {};
                 for (const m of data.matches) {
@@ -470,6 +417,81 @@ export default function Home() {
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* Bracket Play — full bracket tree for each bracket */}
+            {data.futurePaths.length > 0 && (
+              <div>
+                <div className="text-xs text-zinc-500 uppercase tracking-widest mb-1 px-1">Bracket Play</div>
+                <div className="text-xs text-zinc-600 mb-3 px-1">Pool finish determines bracket seeding</div>
+                <div className="space-y-4">
+                  {/* Group paths by bracket */}
+                  {(() => {
+                    const bracketGroups: Record<string, FuturePath[]> = {};
+                    for (const f of data.futurePaths) {
+                      const key = f.nextPlay || 'TBD';
+                      if (!bracketGroups[key]) bracketGroups[key] = [];
+                      bracketGroups[key].push(f);
+                    }
+                    return Object.entries(bracketGroups).map(([bracketName, paths]) => {
+                      const firstPath = paths[0];
+                      const hasUs = paths.some(p => p.isUs);
+                      const range = firstPath.finishRange?.split('\n') || [];
+                      const rounds = firstPath.bracketRounds || [];
+                      const teamCount = firstPath.bracketTeamCount || 0;
+                      return (
+                        <div key={bracketName} className={`bg-zinc-900 rounded-xl border overflow-hidden ${hasUs ? 'border-yellow-700' : 'border-zinc-800'}`}>
+                          {/* Bracket header */}
+                          <div className="px-4 pt-4 pb-3">
+                            <div className="flex items-center justify-between mb-1">
+                              <div className="font-semibold text-white text-base">{bracketName}</div>
+                              {range.length > 1 && (
+                                <div className="text-xs text-emerald-400 font-semibold">{range[1]?.replace('Finish: ', '')}</div>
+                              )}
+                            </div>
+                            <div className="text-zinc-500 text-xs">
+                              {teamCount > 0 ? `${teamCount} teams` : ''}
+                              {firstPath.bracketDate ? ` · ${firstPath.bracketDate}` : ''}
+                              {firstPath.time ? ` · starts ${firstPath.time}` : ''}
+                            </div>
+                            {/* Our pool entries */}
+                            <div className="mt-2 text-xs text-zinc-400">
+                              <span className="text-zinc-500">Our pool → </span>
+                              {paths.map((f, i) => (
+                                <span key={i} className={f.isUs ? 'text-yellow-300 font-semibold' : 'text-zinc-300'}>
+                                  {i > 0 ? ', ' : ''}{f.isUs ? '★ ' : ''}{f.finishText}{f.seed ? ` (seed ${f.seed})` : ''}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Full bracket tree — round by round */}
+                          {rounds.length > 0 && (
+                            <div className="border-t border-zinc-800">
+                              {rounds.map((round, ri) => (
+                                <div key={ri} className="border-b border-zinc-800/50 last:border-0">
+                                  <div className="px-4 py-2 bg-zinc-800/30">
+                                    <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">{round.label}</span>
+                                  </div>
+                                  <div className="px-4 py-2 space-y-1.5">
+                                    {round.matches.map((m: BracketRoundMatch, mi: number) => (
+                                      <div key={mi} className={`flex items-center text-xs px-2 py-1.5 rounded ${m.hasUs ? 'bg-yellow-950/40 border border-yellow-800/50' : 'bg-zinc-800/30'}`}>
+                                        <span className={`flex-1 truncate ${m.hasUs ? 'text-yellow-300 font-semibold' : 'text-zinc-300'}`}>{m.team1}</span>
+                                        <span className="text-zinc-600 mx-2 shrink-0">vs</span>
+                                        <span className={`flex-1 text-right truncate ${m.hasUs ? 'text-yellow-300 font-semibold' : 'text-zinc-300'}`}>{m.team2}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
               </div>
             )}
