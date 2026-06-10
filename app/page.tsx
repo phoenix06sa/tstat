@@ -120,6 +120,7 @@ function HomeContent() {
   const [config, setConfig] = useState<{ eventId: string; divisionId: string; eventName: string } | null>(null);
   const [savedTournaments, setSavedTournaments] = useState<SavedTournament[]>([]);
   const [showTournamentSwitcher, setShowTournamentSwitcher] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   // Load saved tournaments list from localStorage
   useEffect(() => {
@@ -350,11 +351,22 @@ function HomeContent() {
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => { const url = getShareUrl(); if (url) navigator.clipboard.writeText(url); }}
-                className="bg-zinc-800 hover:bg-zinc-700 text-sm px-3 py-2 rounded-lg transition-colors shrink-0"
+                onClick={async () => {
+                  const url = getShareUrl();
+                  if (!url) return;
+                  try {
+                    await navigator.clipboard.writeText(url);
+                  } catch {
+                    // Fallback: prompt user with the URL
+                    window.prompt('Copy this share link:', url);
+                  }
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                }}
+                className={`text-sm px-3 py-2 rounded-lg transition-colors shrink-0 ${copied ? 'bg-emerald-800 text-emerald-200' : 'bg-zinc-800 hover:bg-zinc-700'}`}
                 title="Copy share link"
               >
-                🔗
+                {copied ? '✓' : '🔗'}
               </button>
               {savedTournaments.length > 1 && (
                 <button
