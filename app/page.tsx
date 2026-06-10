@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState, useCallback, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 interface SetScore { us: number | null; them: number | null }
 interface PoolMatch {
@@ -91,8 +91,26 @@ function SetScores({ sets, hasScores }: { sets: SetScore[]; hasScores: boolean }
   );
 }
 
+interface SavedTournament {
+  eventId: string;
+  divisionId: string;
+  eventName: string;
+  teamCode: string;
+  teamName?: string;
+  addedAt: number;
+}
+
 export default function Home() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-zinc-950 flex items-center justify-center text-zinc-500">Loading…</div>}>
+      <HomeContent />
+    </Suspense>
+  );
+}
+
+function HomeContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [data, setData] = useState<TournamentData | null>(null);
   const [teams, setTeams] = useState<TeamOption[]>([]);
   const [selectedTeam, setSelectedTeam] = useState('');
@@ -100,9 +118,43 @@ export default function Home() {
   const [error, setError] = useState('');
   const [lastRefresh, setLastRefresh] = useState('');
   const [config, setConfig] = useState<{ eventId: string; divisionId: string; eventName: string } | null>(null);
+  const [savedTournaments, setSavedTournaments] = useState<SavedTournament[]>([]);
+  const [showTournamentSwitcher, setShowTournamentSwitcher] = useState(false);
 
-  // Check for configuration and load default team
+  // Load saved tournaments list from localStorage
   useEffect(() => {
+    try {
+      const saved = localStorage.getItem('tracker_savedTournaments');
+      if (saved) setSavedTournaments(JSON.parse(saved));
+    } catch { /* ignore */ }
+  }, []);
+
+  // Check for configuration: URL params → localStorage → redirect to setup
+  useEffect(() => {
+    // Priority 1: URL params (?event=X&division=Y&team=Z)
+    const urlEvent = searchParams.get('event');
+    const urlDivision = searchParams.get('division');
+    const urlTeam = searchParams.get('team');
+
+    if (urlEvent && urlDivision && urlTeam) {
+      // Save to localStorage for future visits
+      localStorage.setItem('tracker_eventId', urlEvent);
+      localStorage.setItem('tracker_divisionId', urlDivision);
+      localStorage.setItem('tracker_defaultTeam', urlTeam);
+      // Add to saved tournaments list if not already there
+      const saved: SavedTournament[] = JSON.parse(localStorage.getItem('tracker_savedTournaments') || '[]');
+      const exists = saved.some(s => s.eventId === urlEvent && s.divisionId === urlDivision && s.teamCode === urlTeam);
+      if (!exists) {
+        saved.push({ eventId: urlEvent, divisionId: urlDivision, eventName: '', teamCode: urlTeam, addedAt: Date.now() });
+        localStorage.setItem('tracker_savedTournaments', JSON.stringify(saved));
+        setSavedTournaments(saved);
+      }
+      setConfig({ eventId: urlEvent, divisionId: urlDivision, eventName: '' });
+      setSelectedTeam(urlTeam);
+      return;
+    }
+
+    // Priority 2: localStorage
     const eventId = localStorage.getItem('tracker_eventId');
     const divisionId = localStorage.getItem('tracker_divisionId');
     const eventName = localStorage.getItem('tracker_eventName');
@@ -116,10 +168,9 @@ export default function Home() {
     setConfig({ eventId, divisionId, eventName: eventName || 'Tournament' });
     if (defaultTeam) setSelectedTeam(defaultTeam);
     else {
-      // No team selected, go to setup to select one
       router.push('/setup');
     }
-  }, [router]);
+  }, [router, searchParams]);
 
   // Load team list once after config is loaded
   useEffect(() => {
@@ -165,6 +216,30 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [fetchData, selectedTeam, config]);
 
+  // Update saved tournament metadata once data loads
+  useEffect(() => {
+    if (!data || !config) return;
+    const eventName = data.event || '';
+    if (eventName && config.eventName !== eventName) {
+      setConfig(prev => prev ? { ...prev, eventName } : prev);
+      localStorage.setItem('tracker_eventName', eventName);
+    }
+    // Update saved tournaments list with real names
+    const saved: SavedTournament[] = JSON.parse(localStorage.getItem('tracker_savedTournaments') || '[]');
+    let changed = false;
+    for (const s of saved) {
+      if (s.eventId === config.eventId && s.divisionId === config.divisionId && s.teamCode === selectedTeam) {
+        if (!s.eventName && eventName) { s.eventName = eventName; changed = true; }
+        if (!s.teamName && data.team) { s.teamName = data.team; changed = true; }
+      }
+    }
+    if (changed) {
+      localStorage.setItem('tracker_savedTournaments', JSON.stringify(saved));
+      setSavedTournaments(saved);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
+
   function handleTeamChange(code: string) {
     setSelectedTeam(code);
     localStorage.setItem('tracker_defaultTeam', code);
@@ -173,6 +248,29 @@ export default function Home() {
 
   function handleReconfigure() {
     router.push('/setup');
+  }
+
+  function switchTournament(t: SavedTournament) {
+    localStorage.setItem('tracker_eventId', t.eventId);
+    localStorage.setItem('tracker_divisionId', t.divisionId);
+    localStorage.setItem('tracker_eventName', t.eventName || '');
+    localStorage.setItem('tracker_defaultTeam', t.teamCode);
+    setConfig({ eventId: t.eventId, divisionId: t.divisionId, eventName: t.eventName || '' });
+    setSelectedTeam(t.teamCode);
+    setData(null);
+    setShowTournamentSwitcher(false);
+  }
+
+  function removeTournament(t: SavedTournament) {
+    const updated = savedTournaments.filter(s => !(s.eventId === t.eventId && s.divisionId === t.divisionId && s.teamCode === t.teamCode));
+    localStorage.setItem('tracker_savedTournaments', JSON.stringify(updated));
+    setSavedTournaments(updated);
+  }
+
+  function getShareUrl(): string {
+    if (!config || !selectedTeam) return '';
+    const base = typeof window !== 'undefined' ? window.location.origin : '';
+    return `${base}/?event=${config.eventId}&division=${config.divisionId}&team=${selectedTeam}`;
   }
 
   // Group teams by pool for the dropdown
@@ -252,6 +350,22 @@ export default function Home() {
             </div>
             <div className="flex items-center gap-2">
               <button
+                onClick={() => { const url = getShareUrl(); if (url) navigator.clipboard.writeText(url); }}
+                className="bg-zinc-800 hover:bg-zinc-700 text-sm px-3 py-2 rounded-lg transition-colors shrink-0"
+                title="Copy share link"
+              >
+                🔗
+              </button>
+              {savedTournaments.length > 1 && (
+                <button
+                  onClick={() => setShowTournamentSwitcher(!showTournamentSwitcher)}
+                  className="bg-zinc-800 hover:bg-zinc-700 text-sm px-3 py-2 rounded-lg transition-colors shrink-0"
+                  title="Switch tournament"
+                >
+                  📋
+                </button>
+              )}
+              <button
                 onClick={handleReconfigure}
                 className="bg-zinc-800 hover:bg-zinc-700 text-sm px-3 py-2 rounded-lg transition-colors shrink-0"
                 title="Configure event"
@@ -268,6 +382,41 @@ export default function Home() {
               </button>
             </div>
           </div>
+
+          {/* Tournament switcher panel */}
+          {showTournamentSwitcher && (
+            <div className="mb-3 bg-zinc-800 border border-zinc-700 rounded-xl p-3 space-y-2">
+              <div className="text-xs text-zinc-400 font-semibold uppercase tracking-wider mb-2">Saved Tournaments</div>
+              {savedTournaments.map((t, i) => {
+                const isCurrent = t.eventId === config?.eventId && t.divisionId === config?.divisionId && t.teamCode === selectedTeam;
+                return (
+                  <div key={i} className={`flex items-center justify-between p-2 rounded-lg ${isCurrent ? 'bg-yellow-900/30 border border-yellow-800/50' : 'bg-zinc-900 hover:bg-zinc-700'}`}>
+                    <button
+                      onClick={() => !isCurrent && switchTournament(t)}
+                      className="flex-1 text-left"
+                      disabled={isCurrent}
+                    >
+                      <div className={`text-sm font-medium ${isCurrent ? 'text-yellow-300' : 'text-zinc-200'}`}>
+                        {t.eventName || `Event ${t.eventId.slice(0, 8)}…`}
+                      </div>
+                      <div className="text-xs text-zinc-500">
+                        {t.teamName || t.teamCode}
+                      </div>
+                    </button>
+                    {!isCurrent && (
+                      <button onClick={() => removeTournament(t)} className="text-zinc-600 hover:text-red-400 text-xs ml-2 px-2">✕</button>
+                    )}
+                  </div>
+                );
+              })}
+              <button
+                onClick={handleReconfigure}
+                className="w-full text-center text-xs text-zinc-400 hover:text-zinc-200 py-2 border border-dashed border-zinc-700 rounded-lg"
+              >
+                + Add tournament
+              </button>
+            </div>
+          )}
 
           {/* Team selector */}
           <div className="relative">

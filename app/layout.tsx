@@ -2,8 +2,13 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Skyline 14 Black — Lone Star Regionals",
-  description: "Live tournament tracker for Austin Skyline 14 Black at 2026 Lone Star Regionals",
+  title: "Tournament Tracker",
+  description: "Live volleyball tournament tracker — pool standings, bracket play, scores & schedules",
+  openGraph: {
+    title: "Tournament Tracker",
+    description: "Live volleyball tournament tracker — pool standings, bracket play, scores & schedules",
+    type: "website",
+  },
 };
 
 export default function RootLayout({

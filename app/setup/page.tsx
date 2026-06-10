@@ -103,6 +103,15 @@ export default function SetupPage() {
     localStorage.setItem('tracker_eventName', eventName);
     if (selectedTeam) {
       localStorage.setItem('tracker_defaultTeam', selectedTeam);
+      // Add to saved tournaments list
+      const saved = JSON.parse(localStorage.getItem('tracker_savedTournaments') || '[]');
+      const exists = saved.some((s: { eventId: string; divisionId: string; teamCode: string }) =>
+        s.eventId === eventId && s.divisionId === divisionId && s.teamCode === selectedTeam);
+      if (!exists) {
+        const teamObj = teams.find(t => t.teamCode === selectedTeam);
+        saved.push({ eventId, divisionId, eventName, teamCode: selectedTeam, teamName: teamObj?.teamName || '', addedAt: Date.now() });
+        localStorage.setItem('tracker_savedTournaments', JSON.stringify(saved));
+      }
     }
     setStep('done');
     setTimeout(() => router.push('/'), 1000);
