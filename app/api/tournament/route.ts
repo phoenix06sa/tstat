@@ -1,93 +1,18 @@
 import { NextResponse } from 'next/server';
+import { aes, generateDateRange, fmtTime, fmtDate, fmtDateLong, stripLocationCode, stripAllSuffixes, ordinal, extractAllSources } from '@/lib/aes';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
-const BASE = 'https://results.advancedeventsystems.com';
-const DEFAULT_EVENT = 'PTAwMDAwNDEyNDA90';
-const DEFAULT_DIV = '195174';
-
-const AES_HEADERS = {
-  'accept': 'application/json, text/plain, */*',
-  'origin': 'https://results.advancedeventsystems.com',
-  'referer': 'https://results.advancedeventsystems.com/',
-  'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-};
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function aes(path: string): Promise<any> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const res = await fetch(`${BASE}${path}`, { headers: AES_HEADERS, next: { revalidate: 60 } } as any);
-  if (!res.ok || res.status === 204) return null;
-  const text = await res.text();
-  if (!text || text.trim() === '') return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-}
-
-// Generate all dates between start and end (inclusive) as YYYY-MM-DD strings
-function generateDateRange(startDate: string, endDate: string): string[] {
-  const dates: string[] = [];
-  const start = new Date(startDate.split('T')[0]);
-  const end = new Date(endDate.split('T')[0]);
-  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    dates.push(d.toISOString().split('T')[0]);
-  }
-  return dates;
-}
-
-function fmtTime(iso: string) {
-  if (!iso) return '';
-  const [, time] = iso.split('T');
-  if (!time) return '';
-  const [h, m] = time.split(':').map(Number);
-  const ampm = h < 12 ? 'AM' : 'PM';
-  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
-  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
-}
-
-function fmtDate(iso: string) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-}
-
-// Strip any location code suffix like (LS), (AZ), (NC), etc.
-function stripLocationCode(name: string): string {
-  return name.replace(/\s*\([A-Z]{2}\)\s*$/, '').trim();
-}
-
-// Strip ALL trailing parenthetical suffixes: location codes + explicit ranks
-// e.g. "Roots 14-2 Blue (LS) (37)" → "Roots 14-2 Blue"
-function stripAllSuffixes(name: string): string {
-  return name.replace(/(\s*\([^)]+\))+\s*$/, '').trim();
-}
-
-// Extract all team text references from a bracket play's tree
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function extractAllSources(play: any): Set<string> {
-  const sources = new Set<string>();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function walk(node: any) {
-    if (!node) return;
-    const m = node.Match || {};
-    if (m.FirstTeamText) sources.add(m.FirstTeamText);
-    if (m.SecondTeamText) sources.add(m.SecondTeamText);
-    walk(node.TopSource);
-    walk(node.BottomSource);
-  }
-  for (const r of (play.Roots || [])) { walk(r); walk(r.TopSource); walk(r.BottomSource); }
-  return sources;
-}
-
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const teamCode = searchParams.get('team') || 'g14askyl2ls';
-  const event = searchParams.get('event') || DEFAULT_EVENT;
-  const division = searchParams.get('division') || DEFAULT_DIV;
+  const teamCode = searchParams.get('team');
+  const event = searchParams.get('event');
+  const division = searchParams.get('division');
+
+  if (!teamCode || !event || !division) {
+    return NextResponse.json({ error: 'Missing required params: team, event, division' }, { status: 400 });
+  }
 
   try {
     // ─── 1. Fetch event metadata ───
@@ -102,7 +27,7 @@ export async function GET(req: Request) {
     const divisionName = divisionInfo?.Name || 'Division';
     const eventDates = generateDateRange(eventData.StartDate, eventData.EndDate);
     const datesDisplay = eventDates.length > 0
-      ? `${new Date(eventDates[0]).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}${eventDates.length > 1 ? ` - ${new Date(eventDates[eventDates.length - 1]).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}`
+      ? `${fmtDateLong(eventDates[0])}${eventDates.length > 1 ? ` - ${fmtDateLong(eventDates[eventDates.length - 1])}` : ''}`
       : '';
 
     // ─── 2. Fetch plays for ALL days ───
@@ -174,9 +99,9 @@ export async function GET(req: Request) {
       const allSameSetPerc = setPercs.every((v: number | null) => v === setPercs[0]);
       for (const t of group) {
         if (!allSameSetPerc) {
-          tiebreakers[t.TeamCode] = `Tied ${record} on matches, advanced by set % (${t.SetPercent !== null ? (t.SetPercent * 100).toFixed(1) : 'N/A'}%)`;
+          tiebreakers[t.TeamCode] = `Tied ${record} on matches, ranked by set % (${t.SetPercent !== null ? (t.SetPercent * 100).toFixed(1) : 'N/A'}%)`;
         } else {
-          tiebreakers[t.TeamCode] = `Tied ${record} on matches + sets, advanced by point ratio (${t.PointRatio !== null && typeof t.PointRatio === 'number' ? t.PointRatio.toFixed(3) : 'N/A'})`;
+          tiebreakers[t.TeamCode] = `Tied ${record} on matches + sets, ranked by point ratio (${t.PointRatio !== null && typeof t.PointRatio === 'number' ? t.PointRatio.toFixed(3) : 'N/A'})`;
         }
       }
     }
@@ -291,7 +216,7 @@ export async function GET(req: Request) {
     // Use the last day's brackets as the "final" brackets for ranking
     const finalDay = allDaysPlays[allDaysPlays.length - 1];
     const finalBrackets = finalDay ? finalDay.plays.filter((p: { PlayType: number }) => p.PlayType === 1) : [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const bracketFinishRanges: Record<string, { best: number; worst: number }> = {};
     let rankOffset = 1;
     for (const b of finalBrackets) {
@@ -301,6 +226,8 @@ export async function GET(req: Request) {
       bracketFinishRanges[b.FullName] = { best: rankOffset, worst: rankOffset + teamCount - 1 };
       rankOffset += teamCount;
     }
+    // Total teams in the tournament, as implied by the final brackets
+    const totalTeams = rankOffset - 1;
 
     // Parse pool rank reference from a bracket team text.
     // AES uses inconsistent formats across tournaments, so we try multiple patterns:
@@ -332,8 +259,7 @@ export async function GET(req: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function getLeafMatchups(node: any): { t1: string; t2: string; court: string; time: string }[] {
       if (!node) return [];
-      const m = node.get ? undefined : (node.Match || {});
-      if (!m) return [];
+      const m = node.Match || {};
       const ts = node.TopSource;
       const bs = node.BottomSource;
       if (!ts && !bs) {
@@ -360,9 +286,6 @@ export async function GET(req: Request) {
       opponentRef: string | null;
     };
     const poolRankToBracket: Record<string, BracketMapping> = {};
-
-    // Ordinal helper
-    const ordinal = (n: number) => n === 1 ? '1st' : n === 2 ? '2nd' : n === 3 ? '3rd' : `${n}th`;
 
     // Build full bracket tree structure for display (round-by-round)
     type BracketRound = { label: string; matches: { matchName: string; team1: string; team2: string; court: string; time: string; isPlacement: boolean; hasUs: boolean }[] };
@@ -391,7 +314,7 @@ export async function GET(req: Request) {
     };
 
     // Helper: check if a team text references our team or pool position
-    const isOurTeamRef = (text: string, poolRank?: number): boolean => {
+    const isOurTeamRef = (text: string): boolean => {
       if (!text) return false;
       const ref = parsePoolRef(text);
       if (ref && ref.poolNum === poolNumber) {
@@ -413,7 +336,7 @@ export async function GET(req: Request) {
       const bracketDate = fmtDate(rootMatch?.ScheduledStartDateTime || date);
 
       // Walk bracket tree collecting matches by depth
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const matchesByDepth: Record<number, { matchName: string; team1: string; team2: string; court: string; time: string; isPlacement: boolean; hasUs: boolean }[]> = {};
       let maxDepth = 0;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -448,7 +371,7 @@ export async function GET(req: Request) {
 
       // Build rounds from deepest (first round) to shallowest (finals)
       const rounds: BracketRound[] = [];
-      const roundNames = (depth: number, max: number): string => {
+      const roundNames = (depth: number): string => {
         const fromFinal = depth;  // 0 = final, 1 = semi, 2 = quarter, etc.
         if (fromFinal === 0) return 'Finals';
         if (fromFinal === 1) return 'Semifinals';
@@ -460,7 +383,7 @@ export async function GET(req: Request) {
       for (let d = maxDepth; d >= 0; d--) {
         const matches = (matchesByDepth[d] || []).filter(m => !m.isPlacement);
         if (matches.length > 0) {
-          rounds.push({ label: roundNames(d, maxDepth), matches });
+          rounds.push({ label: roundNames(d), matches });
         }
       }
 
@@ -516,7 +439,7 @@ export async function GET(req: Request) {
     }
 
     // Also try matching by team name/code for completed pool play
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     function findBracketForTeam(teamText: string, teamName: string): { bracketName: string; court: string; time: string; date: string } | null {
       for (const { date, play } of allBrackets) {
         const sources = extractAllSources(play);
@@ -769,7 +692,7 @@ export async function GET(req: Request) {
         }
 
         // Build winners ladder (championship path)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         const isPureWinnersMatch = (mid: number): boolean => {
           const m = allMatches[mid];
           if (!m) return false;
@@ -805,7 +728,7 @@ export async function GET(req: Request) {
           return `Round of ${Math.pow(2, stagesFromFinal + 1)}`;
         };
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         const winnersRounds = winnersLadder.map((mids, idx) => ({
           label: stageLabels(winnersLadder.length, idx),
           isChampPath: true,
@@ -991,6 +914,7 @@ export async function GET(req: Request) {
       futurePaths,
       activeBracket,
       finalStandings,
+      totalTeams,
       debug: {
         eventDates,
         daysWithData: allDaysPlays.map(d => d.date),

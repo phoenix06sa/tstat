@@ -61,6 +61,7 @@ interface TournamentData {
   futurePaths: FuturePath[];
   activeBracket: ActiveBracket | null;
   finalStandings: { overallRank: number; tied: boolean; teamName: string; bracket: string; bracketRank: number; isUs: boolean }[];
+  totalTeams: number;
 }
 interface TeamOption {
   teamId: string; teamName: string; teamCode: string; club: string; pool: string;
@@ -189,13 +190,14 @@ function HomeContent() {
       const res = await fetch(`/api/tournament?team=${teamCode}&event=${config.eventId}&division=${config.divisionId}&t=${Date.now()}`);
       if (!res.ok) {
         const errorText = await res.text();
+        let message = `HTTP ${res.status}: ${errorText || 'Unknown error'}`;
         try {
           const json = JSON.parse(errorText);
-          if (json.error) throw new Error(json.error);
+          if (json.error) message = json.error;
         } catch {
-          // If not JSON, use the text
+          // Not JSON — keep the raw text message
         }
-        throw new Error(`HTTP ${res.status}: ${errorText || 'Unknown error'}`);
+        throw new Error(message);
       }
       const json = await res.json();
       if (json.error) throw new Error(json.error);
@@ -674,7 +676,7 @@ function HomeContent() {
                         <span className="text-emerald-400">{data.activeBracket.finishRange.best}</span>
                         <span className="text-zinc-500"> – </span>
                         <span className="text-zinc-400">{data.activeBracket.finishRange.worst}</span>
-                        <span className="text-zinc-500"> of 64</span>
+                        {data.totalTeams > 0 && <span className="text-zinc-500"> of {data.totalTeams}</span>}
                       </div>
                     )}
                   </div>
@@ -700,7 +702,7 @@ function HomeContent() {
                     <div>
                       <div className="flex items-center gap-2 mb-2 px-1">
                         <div className="h-px flex-1 bg-zinc-800" />
-                        <span className="text-xs text-zinc-600 font-semibold uppercase tracking-widest">Placement Matches (3rd–16th)</span>
+                        <span className="text-xs text-zinc-600 font-semibold uppercase tracking-widest">Placement Matches</span>
                         <div className="h-px flex-1 bg-zinc-800" />
                       </div>
                       <div className="space-y-2">
