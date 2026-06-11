@@ -51,11 +51,15 @@ interface Standing {
   matchPct: string; finishRank: number | null; overallRank: number | null;
   finishRankText: string; tiebreaker: string | null;
 }
+interface PoolInfo {
+  poolName: string; poolCourt: string; date: string; standings: Standing[];
+}
 interface TournamentData {
   team: string; teamCode: string; teamId: string; event: string;
   venue: string; dates: string; division: string;
   fetchedAt: string; poolName: string; poolCourt: string;
   poolStandings: Standing[];
+  pools: PoolInfo[];
   matches: PoolMatch[];
   workAssignments: WorkAssignment[];
   futurePaths: FuturePath[];
@@ -473,13 +477,20 @@ function HomeContent() {
 
         {data && (
           <>
-            {/* Pool standings */}
-            {data.poolStandings.length > 0 && (
-              <div className="bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden">
+            {/* Pool standings — one table per pool (re-pooling tournaments have several) */}
+            {(data.pools && data.pools.length > 0
+              ? data.pools
+              : data.poolStandings.length > 0
+                ? [{ poolName: data.poolName, poolCourt: data.poolCourt, date: '', standings: data.poolStandings }]
+                : []
+            ).map((pool, pi) => (
+              <div key={pi} className="bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden">
                 <div className="px-4 py-3 border-b border-zinc-800">
-                  <div className="text-xs text-zinc-500 uppercase tracking-widest">Pool Standings</div>
-                  <div className="font-semibold text-white mt-0.5">{data.poolName}</div>
-                  <div className="text-zinc-500 text-xs">{data.poolCourt}</div>
+                  <div className="text-xs text-zinc-500 uppercase tracking-widest">
+                    Pool Standings{pool.date ? ` — ${pool.date}` : ''}
+                  </div>
+                  <div className="font-semibold text-white mt-0.5">{pool.poolName}</div>
+                  <div className="text-zinc-500 text-xs">{pool.poolCourt}</div>
                 </div>
                 <table className="w-full text-sm">
                   <thead>
@@ -491,7 +502,7 @@ function HomeContent() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.poolStandings.map((s, i) => (
+                    {pool.standings.map((s, i) => (
                       <tr key={i} className={`border-b border-zinc-800 last:border-0 ${s.isUs ? 'bg-yellow-950/40' : ''}`}>
                         <td className="px-4 py-3">
                           <div className={`font-medium ${s.isUs ? 'text-yellow-300' : 'text-zinc-200'}`}>
@@ -518,7 +529,7 @@ function HomeContent() {
                   </tbody>
                 </table>
               </div>
-            )}
+            ))}
 
             {/* All matches (pool + bracket), grouped by day */}
             <div>
@@ -604,6 +615,9 @@ function HomeContent() {
                       const range = firstPath.finishRange?.split('\n') || [];
                       const teamCount = firstPath.bracketTeamCount || 0;
                       const rounds = firstPath.bracketRounds || [];
+                      // Our bracket renders the live scored view instead of
+                      // the static who-plays-who tree
+                      const active = data.activeBracket?.bracketName === bracketName ? data.activeBracket : null;
                       return (
                         <div key={bracketName} className={`bg-zinc-900 rounded-xl border overflow-hidden ${hasUs ? 'border-yellow-700' : 'border-zinc-800'}`}>
                           {/* Bracket header */}
@@ -630,8 +644,34 @@ function HomeContent() {
                             </div>
                           </div>
 
-                          {/* Full bracket tree — round by round */}
-                          {rounds.length > 0 && (
+                          {/* Our bracket: full scored view, round by round */}
+                          {active ? (
+                            <div className="border-t border-zinc-800">
+                              {active.winnersRounds.map((round, ri) => (
+                                <div key={ri} className="border-b border-zinc-800/50 last:border-0">
+                                  <div className="px-4 py-2 bg-zinc-800/30">
+                                    <span className={`text-xs font-bold uppercase tracking-wider ${ri === active.winnersRounds.length - 1 ? 'text-yellow-500' : 'text-emerald-600'}`}>
+                                      {ri === active.winnersRounds.length - 1 ? '🏆 ' : ''}{round.label}
+                                    </span>
+                                  </div>
+                                  <div className="px-4 py-2 space-y-2">
+                                    {round.matches.map((m, mi) => renderMatch(m, mi, data.teamCode))}
+                                  </div>
+                                </div>
+                              ))}
+                              {active.placementMatches.length > 0 && (
+                                <div>
+                                  <div className="px-4 py-2 bg-zinc-800/30">
+                                    <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Placement Matches</span>
+                                  </div>
+                                  <div className="px-4 py-2 space-y-2">
+                                    {active.placementMatches.map((m, mi) => renderMatch(m, mi, data.teamCode))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ) : rounds.length > 0 && (
+                            /* Other brackets: static who-plays-who tree */
                             <div className="border-t border-zinc-800">
                               {rounds.map((round, ri) => (
                                 <div key={ri} className="border-b border-zinc-800/50 last:border-0">
@@ -659,8 +699,8 @@ function HomeContent() {
               </div>
             )}
 
-            {/* Active Bracket — round-by-round view with scores */}
-            {data.activeBracket && (
+            {/* Fallback: scored bracket view when our bracket isn't among the Bracket Play cards */}
+            {data.activeBracket && !data.futurePaths.some(f => f.nextPlay === data.activeBracket!.bracketName) && (
               <div>
                 <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">
                   Bracket Results — {data.activeBracket.bracketName}

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { aes, generateDateRange, fmtDateLong } from '@/lib/aes';
+import { aes, generateDateRange, fmtDate, fmtDateLong } from '@/lib/aes';
 import type { DayPlays, BracketEntry } from '@/lib/tournament/types';
 import { buildPoolStandings } from '@/lib/tournament/standings';
 import { buildMatches, buildWorkAssignments } from '@/lib/tournament/matches';
@@ -58,11 +58,13 @@ export async function GET(req: Request) {
     }
 
     // ─── 3. Find our team in the first pool they appear in ───
+     
+    // Some tournaments re-pool: the team plays in a new pool each day based
+    // on the prior day's results. Collect every pool we appear in.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let ourPool: any = null;
+    const ourPools: { pool: any; day: string }[] = [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let ourTeamInfo: any = null;
-    let ourPoolDay = '';
 
     for (const dayData of allDaysPlays) {
       const pools = dayData.plays.filter((p: { PlayType: number }) => p.PlayType === 0);
@@ -70,14 +72,19 @@ export async function GET(req: Request) {
         const found = (pool.Teams || []).find((t: { TeamCode: string; TeamId: string | number }) => {
           return t.TeamCode?.toLowerCase() === teamCode.toLowerCase() || String(t.TeamId) === teamCode;
         });
-        if (found) { ourPool = pool; ourTeamInfo = found; ourPoolDay = dayData.date; break; }
+        if (found) {
+          ourPools.push({ pool, day: dayData.date });
+          if (!ourTeamInfo) ourTeamInfo = found;
+        }
       }
-      if (ourPool) break;
     }
 
-    if (!ourPool || !ourTeamInfo) {
+    if (ourPools.length === 0 || !ourTeamInfo) {
       return NextResponse.json({ error: `Team ${teamCode} not found in this division` }, { status: 404 });
     }
+
+    const ourPool = ourPools[0].pool;
+    const ourPoolDay = ourPools[0].day;
 
     const TEAM_ID = String(ourTeamInfo.TeamId);
     const TEAM_NAME = ourTeamInfo.TeamName;
@@ -93,6 +100,15 @@ export async function GET(req: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rawTeams: any[] = ourPool.Teams || [];
     const poolStandings = buildPoolStandings(rawTeams, teamCode);
+
+    // One standings table per pool we played in (re-pooling tournaments
+    // have more than one)
+    const pools = ourPools.map(({ pool, day }) => ({
+      poolName: pool.CompleteFullName || pool.FullName,
+      poolCourt: pool.Courts?.[0]?.Name || '',
+      date: fmtDate(day),
+      standings: buildPoolStandings(pool.Teams || [], teamCode),
+    }));
 
     // Map each play name to the day it occurs on — date fallback for
     // matches AES leaves unscheduled (e.g. a final that follows the semis)
@@ -149,6 +165,7 @@ export async function GET(req: Request) {
       poolName: ourPool.CompleteFullName || ourPool.FullName,
       poolCourt: ourPool.Courts?.[0]?.Name || '',
       poolStandings,
+      pools,
       matches,
       workAssignments,
       futurePaths,
