@@ -40,6 +40,13 @@ export function parsePoolRef(text: string): PoolRef | null {
   return null;
 }
 
+// Placement-refinement brackets (e.g. "5th Pl Bracket", "3rd Place Bracket")
+// re-rank teams that already hold a rank in their parent bracket — they are
+// not a new tier and must not add to finish ranges or final standings.
+export function isPlacementRefinementBracket(name: string): boolean {
+  return /\b\d+(?:st|nd|rd|th)[\s-]*(?:pl|place)\b/i.test(name || '');
+}
+
 // Build bracket finish range map dynamically from the final day's bracket
 // plays. Ranges accumulate in play order: Gold 1-16, Silver 17-32, etc.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -47,6 +54,7 @@ export function buildFinishRanges(finalBrackets: any[]): { bracketFinishRanges: 
   const bracketFinishRanges: FinishRangeMap = {};
   let rankOffset = 1;
   for (const b of finalBrackets) {
+    if (isPlacementRefinementBracket(b.FullName)) continue;
     const frms = b.FutureRoundMatches || [];
     const rankedCount = frms.filter((f: { RankText: string }) => f.RankText).length;
     const teamCount = rankedCount || (b.Roots?.length ? Math.pow(2, Math.ceil(Math.log2(b.Roots.length * 2))) : 4);

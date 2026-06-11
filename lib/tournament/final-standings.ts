@@ -4,6 +4,7 @@
 // at the same elimination round across siblings are also tied.
 
 import { stripLocationCode } from '@/lib/aes';
+import { isPlacementRefinementBracket } from './bracket-paths';
 import type { DayPlays } from './types';
 
 export interface FinalStanding {
@@ -47,6 +48,9 @@ export function buildFinalStandings(finalDay: DayPlays | undefined, teamName: st
 
   for (const play of finalPlays) {
     const bracketName = play.FullName || '';
+    // Skip placement-refinement brackets (e.g. "5th Pl Bracket") — their
+    // teams already hold ranks in the parent bracket
+    if (isPlacementRefinementBracket(bracketName)) continue;
     const tier = bracketTier(bracketName);
     const frms = play.FutureRoundMatches || [];
     const rankedEntries = frms.filter((f: { RankText: string }) => f.RankText);
@@ -145,10 +149,11 @@ export function buildFinalStandings(finalDay: DayPlays | undefined, teamName: st
     }
   }
 
-  // Deduplicate
+  // Deduplicate by team name — entries were pushed in tier order, so the
+  // first (highest) placement wins if a team somehow appears twice
   const seen = new Set<string>();
   finalStandings = finalStandings.filter(s => {
-    const key = `${s.overallRank}|${s.teamName}`;
+    const key = s.teamName.toLowerCase();
     if (seen.has(key)) return false;
     seen.add(key); return true;
   });
