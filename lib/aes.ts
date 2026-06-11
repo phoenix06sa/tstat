@@ -45,8 +45,14 @@ export function generateDateRange(startDate: string, endDate: string): string[] 
   return dates;
 }
 
+// AES uses 0001-01-01T00:00:00 as a sentinel for "no scheduled time"
+// (e.g. a final that follows the semis)
+function isUnscheduled(iso: string): boolean {
+  return !iso || iso.startsWith('0001-');
+}
+
 export function fmtTime(iso: string) {
-  if (!iso) return '';
+  if (isUnscheduled(iso)) return '';
   const [, time] = iso.split('T');
   if (!time) return '';
   const [h, m] = time.split(':').map(Number);
@@ -56,7 +62,7 @@ export function fmtTime(iso: string) {
 }
 
 export function fmtDate(iso: string) {
-  if (!iso) return '';
+  if (isUnscheduled(iso)) return '';
   return atLocalNoon(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 

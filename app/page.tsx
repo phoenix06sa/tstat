@@ -520,13 +520,13 @@ function HomeContent() {
               </div>
             )}
 
-            {/* Pool Play matches */}
+            {/* All matches (pool + bracket), grouped by day */}
             <div>
-              <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Pool Play</div>
+              <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Matches</div>
               {(() => {
                 const matchesByDate: Record<string, PoolMatch[]> = {};
                 for (const m of data.matches) {
-                  const d = m.date || 'Unknown';
+                  const d = m.date || 'Date TBA';
                   if (!matchesByDate[d]) matchesByDate[d] = [];
                   matchesByDate[d].push(m);
                 }
@@ -602,8 +602,8 @@ function HomeContent() {
                       const firstPath = paths[0];
                       const hasUs = paths.some(p => p.isUs);
                       const range = firstPath.finishRange?.split('\n') || [];
-                      const rounds = firstPath.bracketRounds || [];
                       const teamCount = firstPath.bracketTeamCount || 0;
+                      const rounds = firstPath.bracketRounds || [];
                       return (
                         <div key={bracketName} className={`bg-zinc-900 rounded-xl border overflow-hidden ${hasUs ? 'border-yellow-700' : 'border-zinc-800'}`}>
                           {/* Bracket header */}
@@ -659,11 +659,11 @@ function HomeContent() {
               </div>
             )}
 
-            {/* Active Bracket — round-by-round view */}
+            {/* Active Bracket — round-by-round view with scores */}
             {data.activeBracket && (
               <div>
                 <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">
-                  Bracket Play — {data.activeBracket.bracketName}
+                  Bracket Results — {data.activeBracket.bracketName}
                 </div>
                 <div className="space-y-4">
                   {/* Header card */}

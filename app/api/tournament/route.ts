@@ -93,7 +93,17 @@ export async function GET(req: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rawTeams: any[] = ourPool.Teams || [];
     const poolStandings = buildPoolStandings(rawTeams, teamCode);
-    const matches = buildMatches(past, current, TEAM_ID);
+
+    // Map each play name to the day it occurs on — date fallback for
+    // matches AES leaves unscheduled (e.g. a final that follows the semis)
+    const playDates: Record<string, string> = {};
+    for (const dayData of allDaysPlays) {
+      for (const play of dayData.plays) {
+        if (play.FullName && !playDates[play.FullName]) playDates[play.FullName] = dayData.date;
+      }
+    }
+
+    const matches = buildMatches(past, current, TEAM_ID, playDates);
     const workAssignments = buildWorkAssignments(work);
 
     const poolNumber = ourPool.FullName?.match(/Pool (\d+)/)?.[1] || ourPool.ShortName?.replace('P', '') || '?';

@@ -31,13 +31,16 @@ export interface WorkAssignment {
   court: string;
 }
 
+// playDates maps a play's FullName to the YYYY-MM-DD it occurs on. Used as
+// a date fallback for matches with no scheduled time (AES leaves a final
+// that follows the semis unscheduled).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function buildMatches(past: any, current: any, teamId: string): TeamMatch[] {
+export function buildMatches(past: any, current: any, teamId: string, playDates: Record<string, string> = {}): TeamMatch[] {
   const matches: TeamMatch[] = [];
   const seenMatchIds = new Set<number>();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const addMatch = (m: any, playType: number, iFirst: boolean) => {
+  const addMatch = (m: any, playType: number, iFirst: boolean, playName: string) => {
     const matchId = m.MatchId || m.matchId;
     if (seenMatchIds.has(matchId)) return;
     seenMatchIds.add(matchId);
@@ -49,10 +52,12 @@ export function buildMatches(past: any, current: any, teamId: string): TeamMatch
       us: iFirst ? s.FirstTeamScore : s.SecondTeamScore,
       them: iFirst ? s.SecondTeamScore : s.FirstTeamScore,
     }));
+    const sched = m.ScheduledStartDateTime && !m.ScheduledStartDateTime.startsWith('0001-') ? m.ScheduledStartDateTime : '';
+    const playDay = sched ? '' : (playDates[playName] || '');
     matches.push({
       matchName: m.MatchFullName,
-      time: fmtTime(m.ScheduledStartDateTime),
-      date: fmtDate(m.ScheduledStartDateTime),
+      time: fmtTime(sched),
+      date: fmtDate(sched || playDay),
       court: m.Court?.Name,
       opponent,
       opponentCode,
@@ -61,7 +66,11 @@ export function buildMatches(past: any, current: any, teamId: string): TeamMatch
       sets,
       weWon: m.HasScores ? ourWon : null,
       isPoolPlay: playType === 0,
-      timestamp: m.ScheduledStartDateTime ? new Date(m.ScheduledStartDateTime).getTime() : 0,
+      // Unscheduled matches sort to the end of their play's day (a final
+      // follows the semis), or to the very end if the day is unknown too
+      timestamp: sched ? new Date(sched).getTime()
+        : playDay ? new Date(`${playDay}T23:59:59`).getTime()
+        : Number.MAX_SAFE_INTEGER,
     });
   };
 
@@ -72,7 +81,7 @@ export function buildMatches(past: any, current: any, teamId: string): TeamMatch
       if (!m) continue;
       const playType = block.Play?.Type ?? block.PlayType ?? 0;
       const iFirst = m.FirstTeamId === Number(teamId);
-      addMatch(m, playType, iFirst);
+      addMatch(m, playType, iFirst, block.Play?.FullName || '');
     }
   }
 
@@ -82,7 +91,7 @@ export function buildMatches(past: any, current: any, teamId: string): TeamMatch
       const playType = block.Play?.Type ?? 0;
       for (const m of (block.Matches || [])) {
         const iFirst = m.FirstTeamId === Number(teamId);
-        addMatch(m, playType, iFirst);
+        addMatch(m, playType, iFirst, block.Play?.FullName || '');
       }
     }
   }
