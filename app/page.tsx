@@ -757,6 +757,7 @@ function HomeContent() {
             {/* Footer */}
             <div className="text-center text-zinc-700 text-xs pb-4 space-y-2">
               <div>{data.teamCode} · {data.division} · Auto-refreshes every 90s</div>
+              <div>Built with Claude Code</div>
             </div>
           </>
         )}
