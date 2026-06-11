@@ -135,6 +135,34 @@ function HomeContent() {
     } catch { /* ignore */ }
   }, []);
 
+  // Backfill real tournament names for saved entries still showing
+  // missing or placeholder names
+  useEffect(() => {
+    const stale = savedTournaments.filter(s => !s.eventName || s.eventName === 'Tournament');
+    if (stale.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const updated = [...savedTournaments];
+      let changed = false;
+      for (const s of stale) {
+        try {
+          const res = await fetch(`/api/event-info?event=${s.eventId}`);
+          if (!res.ok) continue;
+          const json = await res.json();
+          if (json.name) {
+            const entry = updated.find(u => u.eventId === s.eventId && u.divisionId === s.divisionId && u.teamCode === s.teamCode);
+            if (entry) { entry.eventName = json.name; changed = true; }
+          }
+        } catch { /* ignore */ }
+      }
+      if (!cancelled && changed) {
+        localStorage.setItem('tracker_savedTournaments', JSON.stringify(updated));
+        setSavedTournaments(updated);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [savedTournaments]);
+
   // Check for configuration: URL params → localStorage → redirect to setup
   useEffect(() => {
     // Priority 1: URL params (?event=X&division=Y&team=Z)
