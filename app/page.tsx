@@ -236,8 +236,9 @@ function HomeContent() {
     let changed = false;
     for (const s of saved) {
       if (s.eventId === config.eventId && s.divisionId === config.divisionId && s.teamCode === selectedTeam) {
-        if (!s.eventName && eventName) { s.eventName = eventName; changed = true; }
-        if (!s.teamName && data.team) { s.teamName = data.team; changed = true; }
+        // Replace missing or placeholder names with the real ones from the API
+        if (eventName && s.eventName !== eventName) { s.eventName = eventName; changed = true; }
+        if (data.team && s.teamName !== data.team) { s.teamName = data.team; changed = true; }
       }
     }
     if (changed) {
