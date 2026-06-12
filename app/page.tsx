@@ -379,14 +379,14 @@ function HomeContent() {
             </div>
           )}
 
-          <div className="flex items-center justify-between mb-3">
-            <div>
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <div className="flex-1 min-w-0">
               <div className="font-bold text-white text-lg leading-tight truncate">
                 {data?.team || 'Loading…'}
               </div>
-              <div className="text-zinc-500 text-xs">{data?.poolName}</div>
+              <div className="text-zinc-500 text-xs truncate">{data?.poolName}</div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2">
               <button
                 onClick={async () => {
                   const url = getShareUrl();
@@ -400,7 +400,7 @@ function HomeContent() {
                   setCopied(true);
                   setTimeout(() => setCopied(false), 2000);
                 }}
-                className={`text-sm px-3 py-2 rounded-lg transition-colors shrink-0 ${copied ? 'bg-emerald-800 text-emerald-200' : 'bg-zinc-800 hover:bg-zinc-700'}`}
+                className={`text-sm px-2.5 sm:px-3 py-2 rounded-lg transition-colors shrink-0 ${copied ? 'bg-emerald-800 text-emerald-200' : 'bg-zinc-800 hover:bg-zinc-700'}`}
                 title="Copy share link"
               >
                 {copied ? '✓' : '🔗'}
@@ -408,7 +408,7 @@ function HomeContent() {
               {savedTournaments.length > 1 && (
                 <button
                   onClick={() => setShowTournamentSwitcher(!showTournamentSwitcher)}
-                  className="bg-zinc-800 hover:bg-zinc-700 text-sm px-3 py-2 rounded-lg transition-colors shrink-0"
+                  className="bg-zinc-800 hover:bg-zinc-700 text-sm px-2.5 sm:px-3 py-2 rounded-lg transition-colors shrink-0"
                   title="Switch tournament"
                 >
                   📋
@@ -416,7 +416,7 @@ function HomeContent() {
               )}
               <button
                 onClick={handleReconfigure}
-                className="bg-zinc-800 hover:bg-zinc-700 text-sm px-3 py-2 rounded-lg transition-colors shrink-0"
+                className="bg-zinc-800 hover:bg-zinc-700 text-sm px-2.5 sm:px-3 py-2 rounded-lg transition-colors shrink-0"
                 title="Configure event"
               >
                 ⚙
@@ -424,10 +424,11 @@ function HomeContent() {
               <button
                 onClick={() => fetchData(selectedTeam)}
                 disabled={loading}
-                className="bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-sm px-3 py-2 rounded-lg flex items-center gap-2 transition-colors shrink-0"
+                className="bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-sm px-2.5 sm:px-3 py-2 rounded-lg flex items-center gap-2 transition-colors shrink-0"
+                title="Refresh"
               >
                 <span className={loading ? 'animate-spin inline-block' : ''}>↻</span>
-                {loading ? 'Loading…' : 'Refresh'}
+                <span className="hidden sm:inline">{loading ? 'Loading…' : 'Refresh'}</span>
               </button>
             </div>
           </div>
