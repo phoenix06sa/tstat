@@ -152,6 +152,11 @@ export async function GET(req: Request) {
     const activeBracket = buildActiveBracket({ current, past, allDaysPlays, teamCode, bracketFinishRanges });
     const finalStandings = buildFinalStandings(finalDay, TEAM_NAME);
 
+    // Whether the event's last day has passed — lets the UI distinguish
+    // "no scores yet" from "never played"
+    const lastDate = eventDates[eventDates.length - 1];
+    const eventComplete = lastDate ? new Date(`${lastDate}T23:59:59`) < new Date() : false;
+
     // ─── Return response ───
     return NextResponse.json({
       team: TEAM_NAME,
@@ -172,6 +177,7 @@ export async function GET(req: Request) {
       activeBracket,
       finalStandings,
       totalTeams,
+      eventComplete,
       debug: {
         eventDates,
         daysWithData: allDaysPlays.map(d => d.date),

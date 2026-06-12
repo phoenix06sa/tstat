@@ -66,6 +66,7 @@ interface TournamentData {
   activeBracket: ActiveBracket | null;
   finalStandings: { overallRank: number; tied: boolean; teamName: string; bracket: string; bracketRank: number; isUs: boolean }[];
   totalTeams: number;
+  eventComplete: boolean;
 }
 interface TeamOption {
   teamId: string; teamName: string; teamCode: string; club: string; pool: string;
@@ -78,10 +79,11 @@ function timeAgo(iso: string) {
   return `${Math.floor(diff / 3600)}h ago`;
 }
 
-function SetScores({ sets, hasScores }: { sets: SetScore[]; hasScores: boolean }) {
-  if (!hasScores) return <span className="text-zinc-500 text-sm">No scores yet</span>;
+function SetScores({ sets, hasScores, eventComplete }: { sets: SetScore[]; hasScores: boolean; eventComplete?: boolean }) {
+  const emptyLabel = eventComplete ? 'No result recorded' : 'No scores yet';
+  if (!hasScores) return <span className="text-zinc-500 text-sm">{emptyLabel}</span>;
   const played = sets.filter(s => s.us !== null && s.them !== null);
-  if (!played.length) return <span className="text-zinc-500 text-sm">No scores yet</span>;
+  if (!played.length) return <span className="text-zinc-500 text-sm">{emptyLabel}</span>;
   return (
     <div className="flex gap-2 mt-1">
       {played.map((s, i) => {
@@ -589,7 +591,7 @@ function HomeContent() {
                                 {!m.isPoolPlay && <span className="text-xs bg-purple-900/50 text-purple-300 px-1.5 py-0.5 rounded">Bracket</span>}
                               </div>
                               <div className="font-semibold text-white text-base">vs {m.opponent}</div>
-                              <SetScores sets={m.sets} hasScores={m.hasScores} />
+                              <SetScores sets={m.sets} hasScores={m.hasScores} eventComplete={data.eventComplete} />
                             </div>
                             {m.weWon !== null && (
                               <div className={`text-xs font-bold px-2 py-1 rounded shrink-0 ${m.weWon ? 'bg-emerald-900 text-emerald-300' : 'bg-red-900 text-red-300'}`}>
