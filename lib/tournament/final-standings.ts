@@ -4,7 +4,7 @@
 // at the same elimination round across siblings are also tied.
 
 import { stripLocationCode } from '@/lib/aes';
-import { isPlacementRefinementBracket } from './bracket-paths';
+import { isRefinementBracket, rankedTeamNames, placementAnchor } from './bracket-paths';
 import type { DayPlays } from './types';
 
 export interface FinalStanding {
@@ -46,11 +46,13 @@ export function buildFinalStandings(finalDay: DayPlays | undefined, teamName: st
   const allParsedEntries: ParsedEntry[] = [];
   let hasAnyExplicitRanks = false;
 
+  const seenTeams = new Set<string>();
   for (const play of finalPlays) {
     const bracketName = play.FullName || '';
     // Skip placement-refinement brackets (e.g. "5th Pl Bracket") — their
-    // teams already hold ranks in the parent bracket
-    if (isPlacementRefinementBracket(bracketName)) continue;
+    // teams already hold ranks in an earlier bracket
+    if (isRefinementBracket(play, seenTeams)) continue;
+    for (const n of rankedTeamNames(play)) seenTeams.add(n);
     const tier = bracketTier(bracketName);
     const frms = play.FutureRoundMatches || [];
     const rankedEntries = frms.filter((f: { RankText: string }) => f.RankText);
@@ -107,6 +109,11 @@ export function buildFinalStandings(finalDay: DayPlays | undefined, teamName: st
     let baseOffset = 0;
     for (const tier of tierOrder) {
       const siblings = tierMap[tier];
+
+      // "Nth Place" tiers anchor at rank N, leaving a gap for placements
+      // decided without a final-day bracket (e.g. 3rd/4th)
+      const anchor = siblings.map(b => placementAnchor(b.bracketName)).find(a => a !== null);
+      if (anchor && anchor - 1 > baseOffset) baseOffset = anchor - 1;
 
       // Collect all unique elimination tied ranks in this tier
       const tiedRankGroups: Map<number, ParsedEntry[]> = new Map();

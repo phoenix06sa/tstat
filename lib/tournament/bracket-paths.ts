@@ -40,21 +40,56 @@ export function parsePoolRef(text: string): PoolRef | null {
   return null;
 }
 
-// Placement-refinement brackets (e.g. "5th Pl Bracket", "3rd Place Bracket")
-// re-rank teams that already hold a rank in their parent bracket — they are
-// not a new tier and must not add to finish ranges or final standings.
-export function isPlacementRefinementBracket(name: string): boolean {
-  return /\b\d+(?:st|nd|rd|th)[\s-]*(?:pl|place)\b/i.test(name || '');
+// "Nth Pl/Place" in a bracket name. Used two ways:
+// - as a rank anchor: a "5th Place Bracket" starts at overall rank 5
+// - as a refinement hint when no results exist yet (see below)
+export function placementAnchor(name: string): number | null {
+  const m = (name || '').match(/\b(\d+)(?:st|nd|rd|th)[\s-]*(?:pl|place)\b/i);
+  return m ? parseInt(m[1]) : null;
+}
+
+// Extract team names from a bracket's ranked FutureRoundMatches entries
+// ("N - Team Name (LOC)" → "team name"), skipping unplayed placeholders.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function rankedTeamNames(play: any): string[] {
+  const names: string[] = [];
+  for (const f of (play.FutureRoundMatches || [])) {
+    const m = (f.RankText || '').match(/^(\d+)\s*-\s*(.+)$/);
+    if (!m) continue;
+    const name = stripAllSuffixes(m[2].trim());
+    if (!name || name.startsWith('Winner of') || name.startsWith('Loser of')) continue;
+    names.push(name.toLowerCase());
+  }
+  return names;
+}
+
+// A bracket is a placement REFINEMENT (e.g. ALSC2's "5th Pl Bracket" where
+// Gold quarterfinal losers replay for exact 5th-8th) when every team in it
+// already holds a rank in an earlier bracket — those must not add to finish
+// ranges or standings. Some events instead use "5th Place Bracket" as a
+// team's ONLY final-day play (SLC 14 Open); those count normally.
+// With no results yet, fall back to the name hint.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function isRefinementBracket(play: any, seenTeams: Set<string>): boolean {
+  const names = rankedTeamNames(play);
+  if (names.length > 0) return names.every(n => seenTeams.has(n));
+  return placementAnchor(play.FullName) !== null;
 }
 
 // Build bracket finish range map dynamically from the final day's bracket
 // plays. Ranges accumulate in play order: Gold 1-16, Silver 17-32, etc.
+// "Nth Place" brackets anchor at rank N (leaving a gap for any placements
+// decided without a final-day bracket).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function buildFinishRanges(finalBrackets: any[]): { bracketFinishRanges: FinishRangeMap; totalTeams: number } {
   const bracketFinishRanges: FinishRangeMap = {};
+  const seenTeams = new Set<string>();
   let rankOffset = 1;
   for (const b of finalBrackets) {
-    if (isPlacementRefinementBracket(b.FullName)) continue;
+    if (isRefinementBracket(b, seenTeams)) continue;
+    for (const n of rankedTeamNames(b)) seenTeams.add(n);
+    const anchor = placementAnchor(b.FullName);
+    if (anchor && anchor > rankOffset) rankOffset = anchor;
     const frms = b.FutureRoundMatches || [];
     const rankedCount = frms.filter((f: { RankText: string }) => f.RankText).length;
     const teamCount = rankedCount || (b.Roots?.length ? Math.pow(2, Math.ceil(Math.log2(b.Roots.length * 2))) : 4);
