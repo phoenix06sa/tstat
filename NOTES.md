@@ -1,9 +1,16 @@
 # tstat — Tournament Tracker: Project Notes
 
-**Last updated:** May 9, 2026  
-**Author:** Built with Hermes Agent (claude-sonnet-4-6)  
+**Last updated:** June 11, 2026 (originally May 9, 2026)  
+**Author:** Built with Hermes Agent, maintained with Claude Code (claude-sonnet-4-6)  
 **GitHub:** https://github.com/phoenix06sa/tstat  
-**Netlify:** (connect repo to Netlify — see deploy section below)
+**Netlify:** auto-deploys from `main`
+
+> **⚠️ June 11, 2026:** The codebase was restructured and all hardcoded
+> tournament data removed — see `CHANGELOG-2026-06-11.md` for the current
+> architecture, the final-standings algorithm, and new AES API gotchas
+> (unscheduled-match sentinel, placement-refinement brackets, per-division
+> format variation). The AES API knowledge below remains valid; sections
+> referencing specific files or constants may be outdated where noted.
 
 ---
 
@@ -167,17 +174,23 @@ All three values are available in the API: `MatchPercent`, `SetPercent`, `PointR
 
 ---
 
-## Project Structure
+## Project Structure (updated June 11, 2026)
 
 ```
 ~/Projects/lone-star-tracker/
 ├── app/
 │   ├── api/
-│   │   ├── teams/route.ts        # Returns list of all 64 teams for the dropdown
-│   │   └── tournament/route.ts   # Main data API — all match/bracket/path data
+│   │   ├── teams/route.ts        # Team list for the dropdown (+ real event name)
+│   │   ├── tournament/route.ts   # Main data API — thin orchestrator
+│   │   └── event-info/route.ts   # Lightweight event name lookup
 │   ├── page.tsx                  # Main UI (client component)
+│   ├── setup/page.tsx            # Paste-AES-URL configuration page
 │   ├── layout.tsx
 │   └── globals.css
+├── lib/
+│   ├── aes.ts                    # Shared AES helpers (fetch, dates, name stripping)
+│   └── tournament/               # Typed modules: standings, matches,
+│                                 # bracket-paths, active-bracket, final-standings
 ├── netlify.toml                  # Build config for Netlify
 ├── package.json
 ├── NOTES.md                      # This file
@@ -231,15 +244,12 @@ UI sections (in order):
 
 ## Dev Server Notes
 
-This project runs on port 3002 (3000 is Austin Select VB, 3001 is phxSportsCards).
+`npm run dev` runs on port 3000 by default. (Use `-p 3002` if 3000/3001 are
+taken by Austin Select VB / phxSportsCards.)
 
-**Important: Turbopack does NOT work on ARM Mac (M1/M2/M3).** Must use webpack flag:
-```bash
-cd ~/Projects/lone-star-tracker
-./node_modules/.bin/next dev --webpack -p 3002
-```
-
-The `package.json` dev script already has `--webpack` set. If you see a Turbopack error, this is why.
+**Important: Turbopack does NOT work on ARM Mac (M1/M2/M3).** The
+`package.json` dev AND build scripts both use the `--webpack` flag. If you
+see a Turbopack error, this is why. Same applies on Netlify's build servers.
 
 ---
 
@@ -263,40 +273,20 @@ Steps to deploy:
 
 ---
 
-## What To Do Next Season
+## What To Do Next Season (updated June 11, 2026)
 
-### Step 1: Find the new tournament IDs
-When the 2026-2027 season tournament is posted, get the AES results URL and extract:
-- EVENT_ID (in the URL path)
-- DIV_ID (changes when you click your division)
-- TEAM_CODE (search the plays API for your team)
-- TEAM_ID (numeric, from the same plays API)
+**No code changes needed.** Everything is configured at runtime:
 
-### Step 2: Update the constants in route.ts
-```typescript
-// In app/api/tournament/route.ts and app/api/teams/route.ts
-const EVENT = 'YOUR_NEW_EVENT_ID';
-const DIV = 'YOUR_NEW_DIV_ID';
-```
+1. Get the AES results URL for the new tournament
+2. Open the deployed site → `/setup` → paste the URL → pick your team
+3. Done. The app discovers event dates, pools, brackets, and finish ranges
+   from the API. (The old steps about editing constants in route.ts are
+   obsolete — those constants no longer exist.)
 
-Also update the date strings in the API calls:
-```typescript
-aes(`/api/event/${EVENT}/division/${DIV}/plays/2026-05-09`),  // → update date
-aes(`/api/event/${EVENT}/division/${DIV}/plays/2026-05-10`),  // → update date
-```
-
-### Step 3: Update the finish range map if bracket structure changes
-The `sundayFinishRanges` map in `route.ts` is hardcoded to the 2026 Lone Star bracket structure (64 teams, Gold/Silver/Bronze/Flight). If next year's tournament has a different structure, update those ranges. The bracket names (Gold, Silver A-D, etc.) may be the same — check the `/plays/{sunday_date}` response to confirm.
-
-### Step 4: Update the default team code
-```typescript
-// In app/page.tsx
-const DEFAULT_TEAM = 'g14askyl2ls';  // → update to next year's team code
-```
-
-### Step 5: Test before the tournament
-Run the dev server and point it at the new event. Pool play data usually populates a few days before the tournament when schedules are finalized. Verify:
-- All 4 bracket path cards show (means the Saturday bracket Roots are populated)
+### Test before the tournament
+Pool play data usually populates a few days before the tournament when
+schedules are finalized. Verify:
+- The bracket path cards show (means the bracket Roots are populated)
 - The pool standings table shows your team
 - The team dropdown has your team in it
 
@@ -330,6 +320,10 @@ Eventually integrate this into the main Austin Select Volleyball site (`austin-s
 ---
 
 ## Past Tournament Results Page
+
+> **Removed June 11, 2026:** the hardcoded `/previous` page was deleted —
+> past tournaments now work through the same `/setup` flow (paste the old
+> AES URL). The API knowledge below remains valid and important.
 
 We built a second page at `/previous` that shows results from the prior week's tournament (Salt Lake City Showdown, May 1-3, 2026) in the same visual style as the live tracker. This taught us several important things.
 
