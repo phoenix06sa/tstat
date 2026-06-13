@@ -42,6 +42,8 @@ interface ActiveBracket {
   winnersRounds: ActiveBracketRound[];
   placementMatches: ActiveBracketMatch[];
   totalMatches: number;
+  startTime: string;
+  populated: boolean;
   finishRange: { best: string; worst: string; note: string } | null;
 }
 interface Standing {
@@ -64,6 +66,7 @@ interface TournamentData {
   workAssignments: WorkAssignment[];
   futurePaths: FuturePath[];
   activeBracket: ActiveBracket | null;
+  activeBrackets: Record<string, ActiveBracket>;
   finalStandings: { overallRank: number; tied: boolean; teamName: string; bracket: string; bracketRank: number; isUs: boolean }[];
   totalTeams: number;
   eventComplete: boolean;
@@ -568,7 +571,9 @@ function HomeContent() {
               <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Matches</div>
               {(() => {
                 const matchesByDate: Record<string, PoolMatch[]> = {};
-                for (const m of data.matches) {
+                // Bracket matches live in the Bracket Play section below, so
+                // the chronological list shows pool play only
+                for (const m of data.matches.filter(m => m.isPoolPlay)) {
                   const d = m.date || 'Date TBA';
                   if (!matchesByDate[d]) matchesByDate[d] = [];
                   matchesByDate[d].push(m);
@@ -612,7 +617,7 @@ function HomeContent() {
             {/* Work assignments */}
             {data.workAssignments.length > 0 && (
               <div>
-                <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Work / Ref Assignments</div>
+                <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Upcoming Work Assignments</div>
                 <div className="space-y-2">
                   {data.workAssignments.map((w, i) => (
                     <div key={i} className="bg-zinc-900 rounded-xl border border-zinc-800 px-4 py-3 flex items-center gap-4">
@@ -647,9 +652,13 @@ function HomeContent() {
                       const range = firstPath.finishRange?.split('\n') || [];
                       const teamCount = firstPath.bracketTeamCount || 0;
                       const rounds = firstPath.bracketRounds || [];
-                      // Our bracket renders the live scored view instead of
-                      // the static who-plays-who tree
-                      const active = data.activeBracket?.bracketName === bracketName ? data.activeBracket : null;
+                      // Our bracket always renders the live scored view. Other
+                      // brackets switch from the static who-plays-who tree to
+                      // the same scored view once their teams are slotted.
+                      const ourActive = data.activeBracket?.bracketName === bracketName ? data.activeBracket : null;
+                      const otherView = !ourActive ? (data.activeBrackets?.[bracketName] || null) : null;
+                      const view = ourActive || (otherView?.populated ? otherView : null);
+                      const startTime = view?.startTime || firstPath.time;
                       return (
                         <div key={bracketName} className={`bg-zinc-900 rounded-xl border overflow-hidden ${hasUs ? 'border-yellow-700' : 'border-zinc-800'}`}>
                           {/* Bracket header */}
@@ -663,7 +672,7 @@ function HomeContent() {
                             <div className="text-zinc-500 text-xs">
                               {teamCount > 0 ? `${teamCount} teams` : ''}
                               {firstPath.bracketDate ? ` · ${firstPath.bracketDate}` : ''}
-                              {firstPath.time ? ` · starts ${firstPath.time}` : ''}
+                              {startTime ? ` · starts ${startTime}` : ''}
                             </div>
                             {/* Our pool entries */}
                             <div className="mt-2 text-xs text-zinc-400">
@@ -676,14 +685,15 @@ function HomeContent() {
                             </div>
                           </div>
 
-                          {/* Our bracket: full scored view, round by round */}
-                          {active ? (
+                          {/* Scored view, round by round (our bracket always;
+                              other brackets once their teams are slotted) */}
+                          {view ? (
                             <div className="border-t border-zinc-800">
-                              {active.winnersRounds.map((round, ri) => (
+                              {view.winnersRounds.map((round, ri) => (
                                 <div key={ri} className="border-b border-zinc-800/50 last:border-0">
                                   <div className="px-4 py-2 bg-zinc-800/30">
-                                    <span className={`text-xs font-bold uppercase tracking-wider ${ri === active.winnersRounds.length - 1 ? 'text-yellow-500' : 'text-emerald-600'}`}>
-                                      {ri === active.winnersRounds.length - 1 ? '🏆 ' : ''}{round.label}
+                                    <span className={`text-xs font-bold uppercase tracking-wider ${ri === view.winnersRounds.length - 1 ? 'text-yellow-500' : 'text-emerald-600'}`}>
+                                      {ri === view.winnersRounds.length - 1 ? '🏆 ' : ''}{round.label}
                                     </span>
                                   </div>
                                   <div className="px-4 py-2 space-y-2">
@@ -691,13 +701,13 @@ function HomeContent() {
                                   </div>
                                 </div>
                               ))}
-                              {active.placementMatches.length > 0 && (
+                              {view.placementMatches.length > 0 && (
                                 <div>
                                   <div className="px-4 py-2 bg-zinc-800/30">
                                     <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Placement Matches</span>
                                   </div>
                                   <div className="px-4 py-2 space-y-2">
-                                    {active.placementMatches.map((m, mi) => renderMatch(m, mi, data.teamCode))}
+                                    {view.placementMatches.map((m, mi) => renderMatch(m, mi, data.teamCode))}
                                   </div>
                                 </div>
                               )}

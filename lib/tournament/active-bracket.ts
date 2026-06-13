@@ -1,5 +1,7 @@
-// Active bracket view: the round-by-round championship-path display for the
-// bracket our team is currently in (or finished in).
+// Active bracket view: the round-by-round championship-path display for a
+// bracket. Built for the bracket our team is in (highlighted) and — once a
+// bracket has its teams slotted — for every other bracket too, so Silver,
+// flights, etc. render the same scored view as Gold.
 //
 // AES populates team slots one round ahead; later rounds say "Winner of
 // Match N" with null FirstTeam. The iterative resolution loop below keeps
@@ -22,36 +24,12 @@ export interface ActiveBracketInput {
   bracketFinishRanges: FinishRangeMap;
 }
 
-export function buildActiveBracket(input: ActiveBracketInput): object | null {
-  const { current, past, allDaysPlays, teamCode, bracketFinishRanges } = input;
-
-  // Find the bracket the team is currently in (or, if the tournament is
-  // over, the last bracket they played in)
-  let activeBracketPlayName: string | null = null;
-
-  if (current && current.length > 0) {
-    const currentPlay = current[0]?.Play;
-    if (currentPlay?.Type === 1) activeBracketPlayName = currentPlay.FullName;
-  }
-  if (!activeBracketPlayName && past && past.length > 0) {
-    for (let i = past.length - 1; i >= 0; i--) {
-      if (past[i]?.Play?.Type === 1) {
-        activeBracketPlayName = past[i].Play.FullName;
-        break;
-      }
-    }
-  }
-
-  if (!activeBracketPlayName) return null;
-
-  // Find the bracket play data from our allDaysPlays
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let bracketPlay: any = null;
-  for (const dayData of allDaysPlays) {
-    const found = dayData.plays.find((p: { FullName: string }) => p.FullName === activeBracketPlayName);
-    if (found) { bracketPlay = found; break; }
-  }
-
+// Build the round-by-round scored view for a single bracket play node.
+// `populated` is true once real teams are slotted (or any match has scores),
+// which is the signal the UI uses to switch a bracket from the simple
+// who-plays-who tree to this full scored view.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildBracketViewFromPlay(bracketPlay: any, teamCode: string, bracketFinishRanges: FinishRangeMap): object | null {
   if (!bracketPlay) return null;
 
   // Collect all matches from the bracket tree
@@ -82,11 +60,15 @@ export function buildActiveBracket(input: ActiveBracketInput): object | null {
       matchId: mid,
       matchName: m.FullName,
       time: fmtTime(m.ScheduledStartDateTime),
+      startRaw: m.ScheduledStartDateTime || '',
       court: m.Court?.Name || '',
       team1: t1name,
       team2: t2name,
       team1code: t1code,
       team2code: t2code,
+      // Whether a real team (not a "1st-P2" / "Winner of…" placeholder) is slotted
+      team1Real: !!t1?.Name,
+      team2Real: !!t2?.Name,
       hasUs: isUs1 || isUs2,
       hasScores: m.HasScores || false,
       team1Won: m.FirstTeamWon || false,
@@ -117,6 +99,8 @@ export function buildActiveBracket(input: ActiveBracketInput): object | null {
     collectMatches(r.TopSource, 1);
     collectMatches(r.BottomSource, 1);
   }
+
+  if (Object.keys(allMatches).length === 0) return null;
 
   // Resolve "Winner of..." chains
   let changed = true;
@@ -190,14 +174,87 @@ export function buildActiveBracket(input: ActiveBracketInput): object | null {
     .filter((m: { matchId: number }) => !champMatchIds.has(m.matchId))
     .sort((a: { time: string }, b: { time: string }) => a.time.localeCompare(b.time));
 
-  const range = bracketFinishRanges[activeBracketPlayName];
+  // Earliest scheduled match = when the bracket actually starts (the root is
+  // the final, which is the LAST match — using it gave the wrong start time)
+  const startRaws = Object.values(allMatches)
+    .map((m: { startRaw: string }) => m.startRaw)
+    .filter((r: string) => r && fmtTime(r))
+    .sort();
+  const startTime = startRaws.length ? fmtTime(startRaws[0]) : '';
+
+  // A bracket is "populated" once real teams are slotted or any match is
+  // scored — the UI's cue to show this scored view instead of the simple tree
+  const populated = Object.values(allMatches).some(
+    (m: { hasScores: boolean; team1Real: boolean; team2Real: boolean }) =>
+      m.hasScores || (m.team1Real && m.team2Real),
+  );
+
+  const bracketName = bracketPlay.FullName;
+  const range = bracketFinishRanges[bracketName];
   return {
-    bracketName: bracketPlay.FullName,
+    bracketName,
     completeName: bracketPlay.CompleteFullName,
     courts: (bracketPlay.Courts || []).map((c: { Name: string }) => c.Name),
     winnersRounds,
     placementMatches,
     totalMatches: Object.keys(allMatches).length,
+    startTime,
+    populated,
     finishRange: range ? { best: `${range.best}`, worst: `${range.worst}`, note: `${Object.keys(allMatches).length} matches in bracket` } : null,
   };
+}
+
+export function buildActiveBracket(input: ActiveBracketInput): object | null {
+  const { current, past, allDaysPlays, teamCode, bracketFinishRanges } = input;
+
+  // Find the bracket the team is currently in (or, if the tournament is
+  // over, the last bracket they played in)
+  let activeBracketPlayName: string | null = null;
+
+  if (current && current.length > 0) {
+    const currentPlay = current[0]?.Play;
+    if (currentPlay?.Type === 1) activeBracketPlayName = currentPlay.FullName;
+  }
+  if (!activeBracketPlayName && past && past.length > 0) {
+    for (let i = past.length - 1; i >= 0; i--) {
+      if (past[i]?.Play?.Type === 1) {
+        activeBracketPlayName = past[i].Play.FullName;
+        break;
+      }
+    }
+  }
+
+  if (!activeBracketPlayName) return null;
+
+  // Find the bracket play data from our allDaysPlays
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let bracketPlay: any = null;
+  for (const dayData of allDaysPlays) {
+    const found = dayData.plays.find((p: { FullName: string }) => p.FullName === activeBracketPlayName);
+    if (found) { bracketPlay = found; break; }
+  }
+
+  return buildBracketViewFromPlay(bracketPlay, teamCode, bracketFinishRanges);
+}
+
+// Build the scored view for every bracket, keyed by bracket name. Later days
+// win (the final-day version of a bracket is the live one). The UI uses these
+// for all brackets except our own, which keeps the dedicated activeBracket.
+export interface AllBracketViewsInput {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  brackets: { play: any }[];
+  teamCode: string;
+  bracketFinishRanges: FinishRangeMap;
+}
+
+export function buildAllBracketViews(input: AllBracketViewsInput): Record<string, object> {
+  const { brackets, teamCode, bracketFinishRanges } = input;
+  const out: Record<string, object> = {};
+  for (const { play } of brackets) {
+    const name = play?.FullName || play?.CompleteFullName;
+    if (!name) continue;
+    const view = buildBracketViewFromPlay(play, teamCode, bracketFinishRanges);
+    if (view) out[name] = view;  // last day wins (don't skip if already present)
+  }
+  return out;
 }

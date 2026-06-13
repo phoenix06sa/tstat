@@ -4,7 +4,7 @@ import type { DayPlays, BracketEntry } from '@/lib/tournament/types';
 import { buildPoolStandings } from '@/lib/tournament/standings';
 import { buildMatches, buildWorkAssignments } from '@/lib/tournament/matches';
 import { buildFinishRanges, buildBracketPaths } from '@/lib/tournament/bracket-paths';
-import { buildActiveBracket } from '@/lib/tournament/active-bracket';
+import { buildActiveBracket, buildAllBracketViews } from '@/lib/tournament/active-bracket';
 import { buildFinalStandings } from '@/lib/tournament/final-standings';
 
 export const dynamic = 'force-dynamic';
@@ -150,6 +150,9 @@ export async function GET(req: Request) {
     });
 
     const activeBracket = buildActiveBracket({ current, past, allDaysPlays, teamCode, bracketFinishRanges });
+    // Scored view for every bracket (keyed by name), so non-Gold brackets
+    // render the same way once their teams are slotted
+    const activeBrackets = buildAllBracketViews({ brackets: allBrackets, teamCode, bracketFinishRanges });
     const finalStandings = buildFinalStandings(finalDay, TEAM_NAME);
 
     // Whether the event's last day has passed — lets the UI distinguish
@@ -175,6 +178,7 @@ export async function GET(req: Request) {
       workAssignments,
       futurePaths,
       activeBracket,
+      activeBrackets,
       finalStandings,
       totalTeams,
       eventComplete,

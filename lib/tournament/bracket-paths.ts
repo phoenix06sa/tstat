@@ -172,7 +172,7 @@ export interface BracketPathsInput {
 
 export function buildBracketPaths(input: BracketPathsInput): {
   futurePaths: FuturePath[];
-  bracketTrees: Record<string, { rounds: BracketRound[]; teamCount: number }>;
+  bracketTrees: Record<string, { rounds: BracketRound[]; teamCount: number; startTime: string }>;
 } {
   const { allBrackets, allDaysPlays, rawTeams, teamCode, teamName, poolNumber, bracketFinishRanges } = input;
 
@@ -193,7 +193,7 @@ export function buildBracketPaths(input: BracketPathsInput): {
   const poolRankToBracket: Record<string, BracketMapping> = {};
 
   // Build full bracket tree structure for display (round-by-round)
-  const bracketTrees: Record<string, { rounds: BracketRound[]; teamCount: number }> = {};
+  const bracketTrees: Record<string, { rounds: BracketRound[]; teamCount: number; startTime: string }> = {};
 
   // Helper: format a team text reference into a display-friendly name
   const formatTeamDisplay = (text: string): string => {
@@ -242,6 +242,9 @@ export function buildBracketPaths(input: BracketPathsInput): {
     // Walk bracket tree collecting matches by depth
     const matchesByDepth: Record<number, BracketRoundMatch[]> = {};
     let maxDepth = 0;
+    // Earliest scheduled match = when the bracket starts (the root is the
+    // final, the LAST match — using it gave the wrong "starts" time)
+    const startRaws: string[] = [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const walkTree = (node: any, depth: number, isPlacement: boolean) => {
       if (!node) return;
@@ -249,6 +252,7 @@ export function buildBracketPaths(input: BracketPathsInput): {
       const t1 = m.FirstTeamText || '';
       const t2 = m.SecondTeamText || '';
       if (!t1 && !t2) return;
+      if (m.ScheduledStartDateTime && fmtTime(m.ScheduledStartDateTime)) startRaws.push(m.ScheduledStartDateTime);
       if (!matchesByDepth[depth]) matchesByDepth[depth] = [];
       if (depth > maxDepth) maxDepth = depth;
       matchesByDepth[depth].push({
@@ -297,7 +301,8 @@ export function buildBracketPaths(input: BracketPathsInput): {
     }
 
     const leafCount = (matchesByDepth[maxDepth] || []).filter(m => !m.isPlacement).length;
-    bracketTrees[bracketName] = { rounds, teamCount: leafCount * 2 };
+    startRaws.sort();
+    bracketTrees[bracketName] = { rounds, teamCount: leafCount * 2, startTime: startRaws.length ? fmtTime(startRaws[0]) : bracketTime };
 
     // Get all leaf matchups for pool-rank mapping
     const allLeafMatchups: LeafMatchup[] = [];
@@ -462,7 +467,7 @@ export function buildBracketPaths(input: BracketPathsInput): {
       nextPlay: bracketInfo?.bracketName || 'TBD',
       nextPlayShort: bracketInfo?.bracketName || 'TBD',
       court: bracketInfo?.court || '',
-      time: bracketInfo?.time || '',
+      time: (bracketInfo && bracketTrees[bracketInfo.bracketName]?.startTime) || bracketInfo?.time || '',
       bracketDate: bracketInfo?.date || '',
       workCourt: '',
       workTime: '',
