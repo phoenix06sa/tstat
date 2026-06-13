@@ -1,9 +1,25 @@
 # tstat — Tournament Tracker: Project Notes
 
-**Last updated:** June 11, 2026 (originally May 9, 2026)  
+**Last updated:** June 13, 2026 (originally May 9, 2026)  
 **Author:** Built with Hermes Agent, maintained with Claude Code (claude-sonnet-4-6)  
 **GitHub:** https://github.com/phoenix06sa/tstat  
 **Netlify:** auto-deploys from `main`
+
+> **⚠️ June 13, 2026 (live in-tournament fixes):** First session run against a
+> live event (FAST Pre Nationals). See `CHANGELOG-2026-06-13.md`. Behavior
+> changes that supersede the descriptions further down:
+> - **All brackets now render the full scored view** (rounds, match cards,
+>   scores, WIN badges) once they're *populated* — not just our own bracket.
+>   A bracket is "populated" when any match has scores or both teams are real
+>   (not a `"1st-P2"`/`"Winner of…"` placeholder); until then it keeps the
+>   simple who-plays-who tree. The API now returns an `activeBrackets` map
+>   (bracket name → scored view) in addition to the single `activeBracket`.
+> - **Bracket "starts" time is the earliest scheduled match**, not the root
+>   match (the root is the *final* — the last match — which wrongly showed the
+>   championship time as the start).
+> - **The Matches list shows pool play only**; bracket matches live solely in
+>   the Bracket Play section.
+> - The work section is titled **"Upcoming Work Assignments"**.
 
 > **⚠️ June 11, 2026:** The codebase was restructured and all hardcoded
 > tournament data removed — see `CHANGELOG-2026-06-11.md` for the current
