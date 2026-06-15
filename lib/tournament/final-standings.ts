@@ -18,10 +18,113 @@ export interface FinalStanding {
 }
 
 // Convert sequential bracket rank to elimination-bracket tied rank.
-// e.g. in a 16-team bracket: ranks 9-16 all lose in round 1 → tied at 9th
+// e.g. in a 16-team bracket: ranks 9-16 all lose in round 1 → tied at 9th.
+// Used only as a fallback when a bracket has no scored matches to derive
+// ties from (see computeBracketPlaces).
 function eliminationTiedRank(bracketRank: number): number {
   if (bracketRank <= 2) return bracketRank;
   return Math.pow(2, Math.floor(Math.log2(bracketRank - 1))) + 1;
+}
+
+// Derive each team's finish place within a bracket.
+//
+// The coarse tier comes from elimination depth (the round formula): 1, 2,
+// 3rd–4th, 5th–8th, 9th–16th, … This is depth-aware — a finalist always
+// outranks a semifinalist even if they never met.
+//
+// Head-to-head results then REFINE *within* a tier only. AES plays
+// consolation/placement matches that split same-round losers (e.g. the four
+// quarterfinal losers play off into 5th–6th and 7th–8th, or a 3rd-place match
+// separates the two semifinal losers). Within each tier we take the
+// transitive closure of the "winner beats loser" relation and split teams
+// whose order a match actually decided; teams no match separated stay tied.
+// Refinement never crosses tiers, so it can't tie a finalist with a
+// semifinalist. Returns normalized team name → place (e.g. 1,2,3,3,5,5,7,7
+// for an 8-team bracket with the 3rd-place match unplayed and two consolations).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function computeBracketPlaces(play: any): Map<string, number> {
+  const norm = (s: string) => stripLocationCode(s || '').trim().toLowerCase();
+  const isPlaceholder = (s: string) => !s || s.startsWith('winner of') || s.startsWith('loser of');
+
+  // Collect "winner beats loser" edges from every scored match in the tree
+  const beats = new Map<string, Set<string>>();
+  const addEdge = (w: string, l: string) => {
+    if (!beats.has(w)) beats.set(w, new Set());
+    beats.get(w)!.add(l);
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const walk = (node: any) => {
+    if (!node) return;
+    const m = node.Match || {};
+    if (m.HasScores) {
+      const t1 = norm(m.FirstTeam?.Name || m.FirstTeamText);
+      const t2 = norm(m.SecondTeam?.Name || m.SecondTeamText);
+      if (t1 && t2 && !isPlaceholder(t1) && !isPlaceholder(t2)) {
+        if (m.FirstTeamWon) addEdge(t1, t2);
+        else if (m.SecondTeamWon) addEdge(t2, t1);
+      }
+    }
+    walk(node.TopSource);
+    walk(node.BottomSource);
+  };
+  for (const r of (play.Roots || [])) walk(r);
+
+  // Transitive closure (team counts are tiny, so repeated expansion is fine)
+  const nodes = new Set<string>(beats.keys());
+  for (const s of beats.values()) for (const x of s) nodes.add(x);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const a of nodes) {
+      const sa = beats.get(a);
+      if (!sa) continue;
+      for (const b of [...sa]) {
+        const sb = beats.get(b);
+        if (!sb) continue;
+        for (const c of sb) if (!sa.has(c)) { sa.add(c); changed = true; }
+      }
+    }
+  }
+  const aheadOf = (a: string, b: string) => beats.get(a)?.has(b) || false;
+
+  // Teams in AES's RankText order
+  const ranked: { rank: number; name: string }[] = [];
+  for (const f of (play.FutureRoundMatches || [])) {
+    const mm = (f.RankText || '').match(/^(\d+)\s*-\s*(.+)$/);
+    if (!mm) continue;
+    const name = norm(mm[2].trim().replace(/\s*\(\d+\)\s*$/, ''));
+    if (isPlaceholder(name)) continue;
+    ranked.push({ rank: parseInt(mm[1]), name });
+  }
+  ranked.sort((a, b) => a.rank - b.rank);
+
+  // Coarse tiers by elimination depth; ranked[] is already in rank order so
+  // each tier's members stay rank-ordered
+  const byTier = new Map<number, string[]>();
+  for (const t of ranked) {
+    const base = eliminationTiedRank(t.rank);
+    if (!byTier.has(base)) byTier.set(base, []);
+    byTier.get(base)!.push(t.name);
+  }
+
+  // Within each tier, split into sub-groups using head-to-head results: a new
+  // sub-group starts as soon as someone already in the current one is ahead.
+  // place = tier base + (members of the tier ranked strictly ahead).
+  const places = new Map<string, number>();
+  for (const [base, members] of byTier) {
+    let groupStart = 0;
+    for (let i = 0; i < members.length; i++) {
+      if (i > 0) {
+        let ordered = false;
+        for (let j = groupStart; j < i; j++) {
+          if (aheadOf(members[j], members[i])) { ordered = true; break; }
+        }
+        if (ordered) groupStart = i;
+      }
+      places.set(members[i], base + groupStart);
+    }
+  }
+  return places;
 }
 
 // Extract tier name from bracket name by stripping trailing letter/number suffixes.
@@ -42,7 +145,7 @@ export function buildFinalStandings(finalDay: DayPlays | undefined, teamName: st
   const finalPlays = finalDay.plays.filter((p: { PlayType: number }) => p.PlayType === 1);
 
   // Step 1: Parse all bracket entries
-  type ParsedEntry = { bracketRank: number; teamName: string; explicitOverallRank: number | null; bracketName: string; tier: string };
+  type ParsedEntry = { bracketRank: number; bracketPlace: number; teamName: string; explicitOverallRank: number | null; bracketName: string; tier: string };
   const allParsedEntries: ParsedEntry[] = [];
   let hasAnyExplicitRanks = false;
 
@@ -54,6 +157,9 @@ export function buildFinalStandings(finalDay: DayPlays | undefined, teamName: st
     if (isRefinementBracket(play, seenTeams)) continue;
     for (const n of rankedTeamNames(play)) seenTeams.add(n);
     const tier = bracketTier(bracketName);
+    // Finish places derived from actual results (ties where no match decided
+    // the order); falls back to the round formula for unplayed brackets
+    const places = computeBracketPlaces(play);
     const frms = play.FutureRoundMatches || [];
     const rankedEntries = frms.filter((f: { RankText: string }) => f.RankText);
     if (rankedEntries.length === 0) continue;
@@ -74,7 +180,8 @@ export function buildFinalStandings(finalDay: DayPlays | undefined, teamName: st
       const entryTeamName = stripLocationCode(teamNameRaw);
       // Skip placeholder entries (unplayed tournament)
       if (entryTeamName.startsWith('Winner of') || entryTeamName.startsWith('Loser of')) continue;
-      allParsedEntries.push({ bracketRank, teamName: entryTeamName, explicitOverallRank, bracketName, tier });
+      const bracketPlace = places.get(entryTeamName.toLowerCase()) ?? eliminationTiedRank(bracketRank);
+      allParsedEntries.push({ bracketRank, bracketPlace, teamName: entryTeamName, explicitOverallRank, bracketName, tier });
     }
   }
 
@@ -119,7 +226,7 @@ export function buildFinalStandings(finalDay: DayPlays | undefined, teamName: st
       const tiedRankGroups: Map<number, ParsedEntry[]> = new Map();
       for (const bracket of siblings) {
         for (const entry of bracket.entries) {
-          const tr = eliminationTiedRank(entry.bracketRank);
+          const tr = entry.bracketPlace;
           if (!tiedRankGroups.has(tr)) tiedRankGroups.set(tr, []);
           tiedRankGroups.get(tr)!.push(entry);
         }

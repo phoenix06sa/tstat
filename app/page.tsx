@@ -84,9 +84,9 @@ function timeAgo(iso: string) {
 
 function SetScores({ sets, hasScores, eventComplete }: { sets: SetScore[]; hasScores: boolean; eventComplete?: boolean }) {
   const emptyLabel = eventComplete ? 'No result recorded' : 'No scores yet';
-  if (!hasScores) return <span className="text-zinc-500 text-sm">{emptyLabel}</span>;
+  if (!hasScores) return <span className="text-zinc-400 text-sm">{emptyLabel}</span>;
   const played = sets.filter(s => s.us !== null && s.them !== null);
-  if (!played.length) return <span className="text-zinc-500 text-sm">{emptyLabel}</span>;
+  if (!played.length) return <span className="text-zinc-400 text-sm">{emptyLabel}</span>;
   return (
     <div className="flex gap-2 mt-1">
       {played.map((s, i) => {
@@ -112,7 +112,7 @@ interface SavedTournament {
 
 export default function Home() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-zinc-950 flex items-center justify-center text-zinc-500">Loading…</div>}>
+    <Suspense fallback={<div className="min-h-screen bg-zinc-950 flex items-center justify-center text-zinc-400">Loading…</div>}>
       <HomeContent />
     </Suspense>
   );
@@ -330,35 +330,35 @@ function HomeContent() {
       ? m.hasScores
         ? m.weWon ? 'border-emerald-700' : 'border-red-800'
         : 'border-yellow-700'
-      : m.isWinnersSide ? 'border-zinc-800' : 'border-zinc-700/50';
+      : m.isWinnersSide ? 'border-zinc-700' : 'border-zinc-700/50';
     const winnerTeam = m.hasScores ? (m.team1Won ? displayTeam1 : displayTeam2) : null;
     return (
       <div key={key} className={`bg-zinc-900 rounded-xl border px-4 py-3 ${borderColor}`}>
         <div className="flex items-center justify-between gap-2 mb-1">
-          <span className="text-xs text-zinc-600">{m.matchName}</span>
-          <span className="text-xs text-zinc-600">{m.time} {m.court}</span>
+          <span className="text-xs text-zinc-500">{m.matchName}</span>
+          <span className="text-xs text-zinc-500">{m.time} {m.court}</span>
         </div>
-        <div className={`flex items-center justify-between py-1 ${m.team1code.toLowerCase() === teamCode ? 'text-yellow-300' : m.hasScores && !m.team1Won ? 'text-zinc-600' : isPending1 ? 'text-zinc-600 italic' : 'text-zinc-200'}`}>
+        <div className={`flex items-center justify-between py-1 ${m.team1code.toLowerCase() === teamCode ? 'text-yellow-300' : m.hasScores && !m.team1Won ? 'text-zinc-500' : isPending1 ? 'text-zinc-500 italic' : 'text-zinc-200'}`}>
           <span className="text-sm font-medium">
             {m.team1code.toLowerCase() === teamCode ? '★ ' : ''}{displayTeam1}
           </span>
           {m.hasScores && m.team1Won && <span className="text-xs bg-emerald-900 text-emerald-300 px-2 py-0.5 rounded font-bold">WIN</span>}
         </div>
-        <div className="border-t border-zinc-800 my-1" />
-        <div className={`flex items-center justify-between py-1 ${m.team2code.toLowerCase() === teamCode ? 'text-yellow-300' : m.hasScores && !m.team2Won ? 'text-zinc-600' : isPending2 ? 'text-zinc-600 italic' : 'text-zinc-200'}`}>
+        <div className="border-t border-zinc-700 my-1" />
+        <div className={`flex items-center justify-between py-1 ${m.team2code.toLowerCase() === teamCode ? 'text-yellow-300' : m.hasScores && !m.team2Won ? 'text-zinc-500' : isPending2 ? 'text-zinc-500 italic' : 'text-zinc-200'}`}>
           <span className="text-sm font-medium">
             {m.team2code.toLowerCase() === teamCode ? '★ ' : ''}{displayTeam2}
           </span>
           {m.hasScores && m.team2Won && <span className="text-xs bg-emerald-900 text-emerald-300 px-2 py-0.5 rounded font-bold">WIN</span>}
         </div>
         {m.hasScores && m.sets.length > 0 && (
-          <div className="flex gap-2 mt-2 pt-2 border-t border-zinc-800">
+          <div className="flex gap-2 mt-2 pt-2 border-t border-zinc-700">
             {m.sets.map((s, si) => (
-              <span key={si} className="text-xs font-mono text-zinc-500">
+              <span key={si} className="text-xs font-mono text-zinc-400">
                 {s.us !== null ? `${s.us}-${s.them}` : `${(s as unknown as {s1:number}).s1}-${(s as unknown as {s2:number}).s2}`}
               </span>
             ))}
-            {winnerTeam && <span className="text-xs text-zinc-600 ml-auto">→ {winnerTeam}</span>}
+            {winnerTeam && <span className="text-xs text-zinc-500 ml-auto">→ {winnerTeam}</span>}
           </div>
         )}
         {!m.hasScores && m.hasUs && (
@@ -371,7 +371,7 @@ function HomeContent() {
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans">
       {/* Header */}
-      <div className="bg-zinc-900 border-b border-zinc-800 px-4 py-4 sticky top-0 z-10">
+      <div className="bg-zinc-900 border-b border-zinc-700 px-4 py-4 sticky top-0 z-10">
         <div className="max-w-2xl mx-auto">
           {/* Event info */}
           {data && (
@@ -387,7 +387,7 @@ function HomeContent() {
               <div className="font-bold text-white text-lg leading-tight truncate">
                 {data?.team || 'Loading…'}
               </div>
-              <div className="text-zinc-500 text-xs truncate">{data?.poolName}</div>
+              <div className="text-zinc-400 text-xs truncate">{data?.poolName}</div>
             </div>
             <div className="flex items-center gap-1.5 sm:gap-2">
               <button
@@ -452,12 +452,12 @@ function HomeContent() {
                       <div className={`text-sm font-medium ${isCurrent ? 'text-yellow-300' : 'text-zinc-200'}`}>
                         {t.eventName || `Event ${t.eventId.slice(0, 8)}…`}
                       </div>
-                      <div className="text-xs text-zinc-500">
+                      <div className="text-xs text-zinc-400">
                         {t.teamName || t.teamCode}
                       </div>
                     </button>
                     {!isCurrent && (
-                      <button onClick={() => removeTournament(t)} className="text-zinc-600 hover:text-red-400 text-xs ml-2 px-2">✕</button>
+                      <button onClick={() => removeTournament(t)} className="text-zinc-500 hover:text-red-400 text-xs ml-2 px-2">✕</button>
                     )}
                   </div>
                 );
@@ -493,7 +493,7 @@ function HomeContent() {
         </div>
 
         {lastRefresh && (
-          <div className="max-w-2xl mx-auto mt-1 text-xs text-zinc-600">
+          <div className="max-w-2xl mx-auto mt-1 text-xs text-zinc-500">
             Updated {timeAgo(lastRefresh)} · auto-refreshes every 90s
           </div>
         )}
@@ -505,7 +505,7 @@ function HomeContent() {
         )}
 
         {loading && !data && (
-          <div className="flex items-center justify-center py-20 text-zinc-500">
+          <div className="flex items-center justify-center py-20 text-zinc-400">
             Loading tournament data…
           </div>
         )}
@@ -519,17 +519,17 @@ function HomeContent() {
                 ? [{ poolName: data.poolName, poolCourt: data.poolCourt, date: '', standings: data.poolStandings }]
                 : []
             ).map((pool, pi) => (
-              <div key={pi} className="bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden">
-                <div className="px-4 py-3 border-b border-zinc-800">
-                  <div className="text-xs text-zinc-500 uppercase tracking-widest">
+              <div key={pi} className="bg-zinc-900 rounded-xl border border-zinc-700 overflow-hidden">
+                <div className="px-4 py-3 border-b border-zinc-700">
+                  <div className="text-xs text-zinc-400 uppercase tracking-widest">
                     Pool Standings{pool.date ? ` — ${pool.date}` : ''}
                   </div>
                   <div className="font-semibold text-white mt-0.5">{pool.poolName}</div>
-                  <div className="text-zinc-500 text-xs">{pool.poolCourt}</div>
+                  <div className="text-zinc-400 text-xs">{pool.poolCourt}</div>
                 </div>
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-zinc-500 text-xs border-b border-zinc-800">
+                    <tr className="text-zinc-400 text-xs border-b border-zinc-700">
                       <th className="text-left px-4 py-2">Team</th>
                       <th className="text-center px-2 py-2">M W-L</th>
                       <th className="text-center px-2 py-2">S W-L</th>
@@ -538,14 +538,14 @@ function HomeContent() {
                   </thead>
                   <tbody>
                     {pool.standings.map((s, i) => (
-                      <tr key={i} className={`border-b border-zinc-800 last:border-0 ${s.isUs ? 'bg-yellow-950/40' : ''}`}>
+                      <tr key={i} className={`border-b border-zinc-700 last:border-0 ${s.isUs ? 'bg-yellow-950/40' : ''}`}>
                         <td className="px-4 py-3">
                           <div className={`font-medium ${s.isUs ? 'text-yellow-300' : 'text-zinc-200'}`}>
                             {s.isUs ? '★ ' : ''}{s.teamName}
                           </div>
-                          <div className="text-zinc-600 text-xs">{s.teamCode}</div>
+                          <div className="text-zinc-500 text-xs">{s.teamCode}</div>
                           {s.tiebreaker && s.finishRank !== null && (
-                            <div className={`text-xs mt-0.5 ${s.isUs ? 'text-yellow-600' : 'text-zinc-600'}`}>
+                            <div className={`text-xs mt-0.5 ${s.isUs ? 'text-yellow-600' : 'text-zinc-500'}`}>
                               ↑ {s.tiebreaker}
                             </div>
                           )}
@@ -557,7 +557,7 @@ function HomeContent() {
                             <span className={`rounded px-2 py-0.5 text-xs font-bold ${s.isUs ? 'bg-yellow-800 text-yellow-200' : 'bg-zinc-700 text-zinc-200'}`}>
                               {s.finishRankText || `#${s.finishRank}`}
                             </span>
-                          ) : <span className="text-zinc-600 text-xs">—</span>}
+                          ) : <span className="text-zinc-500 text-xs">—</span>}
                         </td>
                       </tr>
                     ))}
@@ -568,7 +568,7 @@ function HomeContent() {
 
             {/* All matches (pool + bracket), grouped by day */}
             <div>
-              <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Matches</div>
+              <div className="text-xs text-zinc-400 uppercase tracking-widest mb-3 px-1">Matches</div>
               {(() => {
                 const matchesByDate: Record<string, PoolMatch[]> = {};
                 // Bracket matches live in the Bracket Play section below, so
@@ -585,14 +585,14 @@ function HomeContent() {
                       {dayMatches.map((m, i) => (
                         <div key={i} className={`bg-zinc-900 rounded-xl border p-4 ${
                           m.weWon === true ? 'border-emerald-800' :
-                          m.weWon === false ? 'border-red-900' : 'border-zinc-800'
+                          m.weWon === false ? 'border-red-900' : 'border-zinc-700'
                         }`}>
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                <span className="text-xs text-zinc-500 font-mono">{m.matchName}</span>
-                                <span className="text-xs text-zinc-600">{m.time}</span>
-                                <span className="text-xs text-zinc-600">{m.court}</span>
+                                <span className="text-xs text-zinc-400 font-mono">{m.matchName}</span>
+                                <span className="text-xs text-zinc-500">{m.time}</span>
+                                <span className="text-xs text-zinc-500">{m.court}</span>
                                 {m.isPoolPlay && <span className="text-xs bg-blue-900/50 text-blue-300 px-1.5 py-0.5 rounded">Pool</span>}
                                 {!m.isPoolPlay && <span className="text-xs bg-purple-900/50 text-purple-300 px-1.5 py-0.5 rounded">Bracket</span>}
                               </div>
@@ -605,7 +605,7 @@ function HomeContent() {
                               </div>
                             )}
                           </div>
-                          {m.workTeam && <div className="mt-2 text-xs text-zinc-600 border-t border-zinc-800 pt-2">Work: {m.workTeam}</div>}
+                          {m.workTeam && <div className="mt-2 text-xs text-zinc-500 border-t border-zinc-700 pt-2">Work: {m.workTeam}</div>}
                         </div>
                       ))}
                     </div>
@@ -617,14 +617,14 @@ function HomeContent() {
             {/* Work assignments */}
             {data.workAssignments.length > 0 && (
               <div>
-                <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Upcoming Work Assignments</div>
+                <div className="text-xs text-zinc-400 uppercase tracking-widest mb-3 px-1">Upcoming Work Assignments</div>
                 <div className="space-y-2">
                   {data.workAssignments.map((w, i) => (
-                    <div key={i} className="bg-zinc-900 rounded-xl border border-zinc-800 px-4 py-3 flex items-center gap-4">
+                    <div key={i} className="bg-zinc-900 rounded-xl border border-zinc-700 px-4 py-3 flex items-center gap-4">
                       <div className="text-zinc-400 font-mono text-sm font-semibold w-28">{w.date} {w.time}</div>
                       <div>
                         <div className="text-zinc-300 text-sm">{w.play}</div>
-                        <div className="text-zinc-600 text-xs">{w.court}</div>
+                        <div className="text-zinc-500 text-xs">{w.court}</div>
                       </div>
                     </div>
                   ))}
@@ -635,8 +635,8 @@ function HomeContent() {
             {/* Bracket Play — full bracket tree for each bracket */}
             {data.futurePaths.length > 0 && (
               <div>
-                <div className="text-xs text-zinc-500 uppercase tracking-widest mb-1 px-1">Bracket Play</div>
-                <div className="text-xs text-zinc-600 mb-3 px-1">Pool finish determines bracket seeding</div>
+                <div className="text-xs text-zinc-400 uppercase tracking-widest mb-1 px-1">Bracket Play</div>
+                <div className="text-xs text-zinc-500 mb-3 px-1">Pool finish determines bracket seeding</div>
                 <div className="space-y-4">
                   {/* Group paths by bracket */}
                   {(() => {
@@ -660,7 +660,7 @@ function HomeContent() {
                       const view = ourActive || (otherView?.populated ? otherView : null);
                       const startTime = view?.startTime || firstPath.time;
                       return (
-                        <div key={bracketName} className={`bg-zinc-900 rounded-xl border overflow-hidden ${hasUs ? 'border-yellow-700' : 'border-zinc-800'}`}>
+                        <div key={bracketName} className={`bg-zinc-900 rounded-xl border overflow-hidden ${hasUs ? 'border-yellow-700' : 'border-zinc-700'}`}>
                           {/* Bracket header */}
                           <div className="px-4 pt-4 pb-3">
                             <div className="flex items-center justify-between mb-1">
@@ -669,14 +669,14 @@ function HomeContent() {
                                 <div className="text-xs text-emerald-400 font-semibold">{range[1]?.replace('Finish: ', '')}</div>
                               )}
                             </div>
-                            <div className="text-zinc-500 text-xs">
+                            <div className="text-zinc-400 text-xs">
                               {teamCount > 0 ? `${teamCount} teams` : ''}
                               {firstPath.bracketDate ? ` · ${firstPath.bracketDate}` : ''}
                               {startTime ? ` · starts ${startTime}` : ''}
                             </div>
                             {/* Our pool entries */}
                             <div className="mt-2 text-xs text-zinc-400">
-                              <span className="text-zinc-500">Our pool → </span>
+                              <span className="text-zinc-400">Our pool → </span>
                               {paths.map((f, i) => (
                                 <span key={i} className={f.isUs ? 'text-yellow-300 font-semibold' : 'text-zinc-300'}>
                                   {i > 0 ? ', ' : ''}{f.isUs ? '★ ' : ''}{f.finishText}{f.seed ? ` (seed ${f.seed})` : ''}
@@ -688,9 +688,9 @@ function HomeContent() {
                           {/* Scored view, round by round (our bracket always;
                               other brackets once their teams are slotted) */}
                           {view ? (
-                            <div className="border-t border-zinc-800">
+                            <div className="border-t border-zinc-700">
                               {view.winnersRounds.map((round, ri) => (
-                                <div key={ri} className="border-b border-zinc-800/50 last:border-0">
+                                <div key={ri} className="border-b border-zinc-700/50 last:border-0">
                                   <div className="px-4 py-2 bg-zinc-800/30">
                                     <span className={`text-xs font-bold uppercase tracking-wider ${ri === view.winnersRounds.length - 1 ? 'text-yellow-500' : 'text-emerald-600'}`}>
                                       {ri === view.winnersRounds.length - 1 ? '🏆 ' : ''}{round.label}
@@ -704,7 +704,7 @@ function HomeContent() {
                               {view.placementMatches.length > 0 && (
                                 <div>
                                   <div className="px-4 py-2 bg-zinc-800/30">
-                                    <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Placement Matches</span>
+                                    <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Placement Matches</span>
                                   </div>
                                   <div className="px-4 py-2 space-y-2">
                                     {view.placementMatches.map((m, mi) => renderMatch(m, mi, data.teamCode))}
@@ -714,9 +714,9 @@ function HomeContent() {
                             </div>
                           ) : rounds.length > 0 && (
                             /* Other brackets: static who-plays-who tree */
-                            <div className="border-t border-zinc-800">
+                            <div className="border-t border-zinc-700">
                               {rounds.map((round, ri) => (
-                                <div key={ri} className="border-b border-zinc-800/50 last:border-0">
+                                <div key={ri} className="border-b border-zinc-700/50 last:border-0">
                                   <div className="px-4 py-2 bg-zinc-800/30">
                                     <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">{round.label}</span>
                                   </div>
@@ -724,7 +724,7 @@ function HomeContent() {
                                     {round.matches.map((m: BracketRoundMatch, mi: number) => (
                                       <div key={mi} className={`flex items-center text-xs px-2 py-1.5 rounded ${m.hasUs ? 'bg-yellow-950/40 border border-yellow-800/50' : 'bg-zinc-800/30'}`}>
                                         <span className={`flex-1 truncate ${m.hasUs ? 'text-yellow-300 font-semibold' : 'text-zinc-300'}`}>{m.team1}</span>
-                                        <span className="text-zinc-600 mx-2 shrink-0">vs</span>
+                                        <span className="text-zinc-500 mx-2 shrink-0">vs</span>
                                         <span className={`flex-1 text-right truncate ${m.hasUs ? 'text-yellow-300 font-semibold' : 'text-zinc-300'}`}>{m.team2}</span>
                                       </div>
                                     ))}
@@ -744,21 +744,21 @@ function HomeContent() {
             {/* Fallback: scored bracket view when our bracket isn't among the Bracket Play cards */}
             {data.activeBracket && !data.futurePaths.some(f => f.nextPlay === data.activeBracket!.bracketName) && (
               <div>
-                <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">
+                <div className="text-xs text-zinc-400 uppercase tracking-widest mb-3 px-1">
                   Bracket Results — {data.activeBracket.bracketName}
                 </div>
                 <div className="space-y-4">
                   {/* Header card */}
                   <div className="bg-zinc-900 rounded-xl border border-yellow-700 px-4 py-3">
                     <div className="font-bold text-white">{data.activeBracket.bracketName}</div>
-                    <div className="text-zinc-500 text-xs">{data.activeBracket.completeName}</div>
+                    <div className="text-zinc-400 text-xs">{data.activeBracket.completeName}</div>
                     {data.activeBracket.finishRange && (
                       <div className="mt-1 text-xs">
-                        <span className="text-zinc-500">Finish range: </span>
+                        <span className="text-zinc-400">Finish range: </span>
                         <span className="text-emerald-400">{data.activeBracket.finishRange.best}</span>
-                        <span className="text-zinc-500"> – </span>
+                        <span className="text-zinc-400"> – </span>
                         <span className="text-zinc-400">{data.activeBracket.finishRange.worst}</span>
-                        {data.totalTeams > 0 && <span className="text-zinc-500"> of {data.totalTeams}</span>}
+                        {data.totalTeams > 0 && <span className="text-zinc-400"> of {data.totalTeams}</span>}
                       </div>
                     )}
                   </div>
@@ -784,7 +784,7 @@ function HomeContent() {
                     <div>
                       <div className="flex items-center gap-2 mb-2 px-1">
                         <div className="h-px flex-1 bg-zinc-800" />
-                        <span className="text-xs text-zinc-600 font-semibold uppercase tracking-widest">Placement Matches</span>
+                        <span className="text-xs text-zinc-500 font-semibold uppercase tracking-widest">Placement Matches</span>
                         <div className="h-px flex-1 bg-zinc-800" />
                       </div>
                       <div className="space-y-2">
@@ -799,25 +799,25 @@ function HomeContent() {
             {/* Final Standings — full 64-team list after all bracket play complete */}
             {data.finalStandings && data.finalStandings.length > 0 && (
               <div>
-                <div className="text-xs text-zinc-500 uppercase tracking-widest mb-3 px-1">Final Standings</div>
-                <div className="bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden">
+                <div className="text-xs text-zinc-400 uppercase tracking-widest mb-3 px-1">Final Standings</div>
+                <div className="bg-zinc-900 rounded-xl border border-zinc-700 overflow-hidden">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="text-zinc-500 text-xs border-b border-zinc-800">
+                      <tr className="text-zinc-400 text-xs border-b border-zinc-700">
                         <th className="text-center px-3 py-2 w-10">Rank</th>
                         <th className="text-left px-3 py-2">Team</th>
-                        <th className="text-right px-3 py-2 hidden sm:table-cell text-zinc-600">Bracket</th>
+                        <th className="text-right px-3 py-2 hidden sm:table-cell text-zinc-500">Bracket</th>
                       </tr>
                     </thead>
                     <tbody>
                       {data.finalStandings.map((s, i) => (
-                        <tr key={i} className={`border-b border-zinc-800 last:border-0 ${s.isUs ? 'bg-yellow-950/40' : ''}`}>
+                        <tr key={i} className={`border-b border-zinc-700 last:border-0 ${s.isUs ? 'bg-yellow-950/40' : ''}`}>
                           <td className="text-center px-3 py-2.5">
                             <span className={`text-xs font-bold font-mono ${
                               s.overallRank === 1 ? 'text-yellow-400' :
                               s.overallRank <= 3 ? 'text-zinc-300' :
                               s.isUs ? 'text-yellow-500' :
-                              'text-zinc-500'
+                              'text-zinc-400'
                             }`}>
                               {s.tied ? 'T-' : ''}{s.overallRank}
                             </span>
@@ -828,7 +828,7 @@ function HomeContent() {
                             </span>
                           </td>
                           <td className="px-3 py-2.5 text-right hidden sm:table-cell">
-                            <span className="text-zinc-600 text-xs">{s.bracket}</span>
+                            <span className="text-zinc-500 text-xs">{s.bracket}</span>
                           </td>
                         </tr>
                       ))}
@@ -839,7 +839,7 @@ function HomeContent() {
             )}
 
             {/* Footer */}
-            <div className="text-center text-zinc-700 text-xs pb-4 space-y-2">
+            <div className="text-center text-zinc-500 text-xs pb-4 space-y-2">
               <div>{data.teamCode} · {data.division} · Auto-refreshes every 90s</div>
               <div>Built with Claude Code</div>
             </div>

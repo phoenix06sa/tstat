@@ -130,10 +130,10 @@ export default function SetupPage() {
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans flex items-center justify-center p-4">
       <div className="max-w-md w-full">
-        <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-6 space-y-6">
+        <div className="bg-zinc-900 rounded-xl border border-zinc-700 p-6 space-y-6">
           <div>
             <h1 className="text-2xl font-bold text-white mb-1">Tournament Tracker Setup</h1>
-            <p className="text-zinc-500 text-sm">Configure your event and default team</p>
+            <p className="text-zinc-400 text-sm">Configure your event and default team</p>
           </div>
 
           {step === 'event' && (
@@ -147,9 +147,9 @@ export default function SetupPage() {
                   value={eventUrl}
                   onChange={e => setEventUrl(e.target.value)}
                   placeholder="https://results.advancedeventsystems.com/event/XXXXX/divisions/YYYYY/overview"
-                  className="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 text-sm rounded-lg px-4 py-3 focus:outline-none focus:border-yellow-500 placeholder-zinc-600"
+                  className="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 text-sm rounded-lg px-4 py-3 focus:outline-none focus:border-yellow-500 placeholder-zinc-500"
                 />
-                <p className="text-xs text-zinc-600 mt-1">
+                <p className="text-xs text-zinc-500 mt-1">
                   Paste the full AES event URL (from the divisions/overview page)
                 </p>
               </div>
@@ -161,7 +161,7 @@ export default function SetupPage() {
               <button
                 onClick={fetchTeams}
                 disabled={loading || !eventUrl}
-                className="w-full bg-yellow-600 hover:bg-yellow-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white font-medium py-3 rounded-lg transition-colors"
+                className="w-full bg-yellow-600 hover:bg-yellow-500 disabled:bg-zinc-700 disabled:text-zinc-400 text-white font-medium py-3 rounded-lg transition-colors"
               >
                 {loading ? 'Loading teams…' : 'Continue'}
               </button>
@@ -186,7 +186,7 @@ export default function SetupPage() {
                     </option>
                   ))}
                 </select>
-                <p className="text-xs text-zinc-600 mt-1">
+                <p className="text-xs text-zinc-500 mt-1">
                   This team will be selected by default on the tracker
                 </p>
               </div>
@@ -212,7 +212,7 @@ export default function SetupPage() {
 
               <button
                 onClick={() => setStep('event')}
-                className="w-full text-zinc-500 hover:text-zinc-400 text-sm py-2"
+                className="w-full text-zinc-400 hover:text-zinc-400 text-sm py-2"
               >
                 ← Back
               </button>
@@ -223,7 +223,7 @@ export default function SetupPage() {
             <div className="text-center py-8">
               <div className="text-4xl mb-4">✓</div>
               <div className="text-lg font-medium text-white mb-2">Configuration Saved</div>
-              <div className="text-zinc-500 text-sm">Redirecting to tracker…</div>
+              <div className="text-zinc-400 text-sm">Redirecting to tracker…</div>
             </div>
           )}
         </div>
@@ -231,7 +231,7 @@ export default function SetupPage() {
         <div className="mt-4 text-center">
           <button
             onClick={() => router.push('/')}
-            className="text-zinc-600 hover:text-zinc-400 text-sm underline"
+            className="text-zinc-500 hover:text-zinc-400 text-sm underline"
           >
             Cancel
           </button>
