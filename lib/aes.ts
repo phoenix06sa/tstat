@@ -26,6 +26,14 @@ export async function aes(path: string, revalidate = 60): Promise<any> {
   }
 }
 
+// Encode a numeric AES event id into the token the results API expects, e.g.
+// 42465 -> "PTAwMDAwNDI0NjU90". It is base64 of "=<id zero-padded to 10>=",
+// plus a trailing "0" the results router requires (the clean base64 without
+// it returns the SPA shell). Verified against several live events.
+export function encodeEventId(numericId: number | string): string {
+  return Buffer.from(`=${String(numericId).padStart(10, '0')}=`).toString('base64') + '0';
+}
+
 // Anchor a date string at local noon so the calendar day survives timezone
 // conversion. Bare "YYYY-MM-DD" strings otherwise parse as UTC midnight,
 // which renders as the previous day in timezones west of UTC.

@@ -20,9 +20,13 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Event not found' }, { status: 404 });
   }
 
+  const divisions = (info.Divisions || []).map((d: { DivisionId: number; Name: string }) => ({
+    id: String(d.DivisionId),
+    name: d.Name,
+  }));
   const divisionName = division
-    ? (info.Divisions || []).find((d: { DivisionId: number }) => String(d.DivisionId) === division)?.Name || ''
+    ? divisions.find((d: { id: string }) => d.id === division)?.name || ''
     : '';
 
-  return NextResponse.json({ name: info.Name || '', division: divisionName });
+  return NextResponse.json({ name: info.Name || '', division: divisionName, divisions });
 }

@@ -131,6 +131,10 @@ function HomeContent() {
   const [savedTournaments, setSavedTournaments] = useState<SavedTournament[]>([]);
   const [showTournamentSwitcher, setShowTournamentSwitcher] = useState(false);
   const [copied, setCopied] = useState(false);
+  // True only once we've confirmed a valid setup to show. Until then (or while
+  // redirecting an un-setup visitor to /setup) we render a neutral splash
+  // instead of flashing the half-loaded tracker.
+  const [ready, setReady] = useState(false);
 
   // Load saved tournaments list from localStorage
   useEffect(() => {
@@ -190,6 +194,7 @@ function HomeContent() {
       }
       setConfig({ eventId: urlEvent, divisionId: urlDivision, eventName: '' });
       setSelectedTeam(urlTeam);
+      setReady(true);
       return;
     }
 
@@ -205,8 +210,10 @@ function HomeContent() {
     }
 
     setConfig({ eventId, divisionId, eventName: eventName || 'Tournament' });
-    if (defaultTeam) setSelectedTeam(defaultTeam);
-    else {
+    if (defaultTeam) {
+      setSelectedTeam(defaultTeam);
+      setReady(true);
+    } else {
       router.push('/setup');
     }
   }, [router, searchParams]);
@@ -367,6 +374,12 @@ function HomeContent() {
       </div>
     );
   };
+
+  // Until we've confirmed a saved tournament, show a neutral splash. Visitors
+  // with no setup are redirected to /setup without ever seeing the tracker.
+  if (!ready) {
+    return <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-zinc-400">Loading…</div>;
+  }
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans">

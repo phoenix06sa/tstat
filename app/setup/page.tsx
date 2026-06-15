@@ -6,6 +6,22 @@ import { useRouter } from 'next/navigation';
 interface TeamOption {
   teamId: string; teamName: string; teamCode: string; club: string; pool: string;
 }
+interface EventResult {
+  eventId: string; numericId: number; name: string;
+  startDate: string; endDate: string; location: string; isPast: boolean;
+}
+interface DivisionOption { id: string; name: string }
+
+// "Jun 13–14, 2026" / "Jun 13, 2026" from two ISO dates
+function fmtRange(start: string, end: string): string {
+  const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
+  const s = start ? new Date(start.split('T')[0] + 'T12:00:00') : null;
+  const e = end ? new Date(end.split('T')[0] + 'T12:00:00') : null;
+  if (!s) return '';
+  const year = (e || s).getFullYear();
+  if (!e || s.getTime() === e.getTime()) return `${s.toLocaleDateString('en-US', opts)}, ${year}`;
+  return `${s.toLocaleDateString('en-US', opts)} – ${e.toLocaleDateString('en-US', opts)}, ${year}`;
+}
 
 export default function SetupPage() {
   const router = useRouter();
@@ -17,35 +33,53 @@ export default function SetupPage() {
   const [selectedTeam, setSelectedTeam] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [step, setStep] = useState<'event' | 'team' | 'done'>('event');
+  const [step, setStep] = useState<'event' | 'division' | 'team' | 'done'>('event');
 
-  // Load existing config
+  // Search state
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<EventResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [showUrl, setShowUrl] = useState(false);
+
+  // Division state
+  const [divisions, setDivisions] = useState<DivisionOption[]>([]);
+
+  // Load existing config (so the URL field is prefilled if reconfiguring)
   useEffect(() => {
     const savedEventId = localStorage.getItem('tracker_eventId');
     const savedDivisionId = localStorage.getItem('tracker_divisionId');
-    const savedEventName = localStorage.getItem('tracker_eventName');
-    const savedTeam = localStorage.getItem('tracker_defaultTeam');
-    if (savedEventId) setEventId(savedEventId);
-    if (savedDivisionId) setDivisionId(savedDivisionId);
-    if (savedEventName) setEventName(savedEventName);
-    if (savedTeam) setSelectedTeam(savedTeam);
     if (savedEventId && savedDivisionId) {
       setEventUrl(`https://results.advancedeventsystems.com/event/${savedEventId}/divisions/${savedDivisionId}/overview`);
     }
   }, []);
 
+  // Debounced tournament search
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) { setResults([]); setSearching(false); return; }
+    let cancelled = false;
+    setSearching(true);
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/events?q=${encodeURIComponent(q)}`);
+        const json = await res.json();
+        if (!cancelled) setResults(json.events || []);
+      } catch {
+        if (!cancelled) setResults([]);
+      } finally {
+        if (!cancelled) setSearching(false);
+      }
+    }, 300);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [query]);
+
   const parseEventUrl = (url: string) => {
     try {
-      const urlObj = new URL(url);
-      const pathParts = urlObj.pathname.split('/');
+      const pathParts = new URL(url).pathname.split('/');
       const eventIndex = pathParts.indexOf('event');
       const divisionsIndex = pathParts.indexOf('divisions');
-
       if (eventIndex >= 0 && divisionsIndex >= 0 && eventIndex + 1 < pathParts.length && divisionsIndex + 1 < pathParts.length) {
-        return {
-          eventId: pathParts[eventIndex + 1],
-          divisionId: pathParts[divisionsIndex + 1],
-        };
+        return { eventId: pathParts[eventIndex + 1], divisionId: pathParts[divisionsIndex + 1] };
       }
       return null;
     } catch {
@@ -53,38 +87,25 @@ export default function SetupPage() {
     }
   };
 
-  const fetchTeams = async () => {
-    const parsed = parseEventUrl(eventUrl);
-    if (!parsed) {
-      setError('Invalid URL format. Please paste a full AES event URL like: https://results.advancedeventsystems.com/event/XXXXX/divisions/YYYYY/overview');
-      return;
-    }
-
-    setEventId(parsed.eventId);
-    setDivisionId(parsed.divisionId);
+  // Load teams for a chosen event + division, then advance to team selection
+  const loadTeams = async (evId: string, divId: string) => {
     setLoading(true);
     setError('');
-
-    // Add timeout warning
     const timeoutWarning = setTimeout(() => {
-      setError('Taking longer than expected... This may mean the event schedule hasn\'t been published yet, or the AES API is slow.');
+      setError('Taking longer than expected… the event schedule may not be published yet, or AES is slow.');
     }, 15000);
-
     try {
-      const res = await fetch(`/api/teams?event=${parsed.eventId}&division=${parsed.divisionId}`);
+      const res = await fetch(`/api/teams?event=${evId}&division=${divId}`);
       clearTimeout(timeoutWarning);
-
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       if (json.error) throw new Error(json.error);
-
       if (!json.teams || json.teams.length === 0) {
-        setError('No teams found. The event schedule may not have been published yet.');
+        setError('No teams found. The schedule may not be published yet.');
         return;
       }
-
-      setTeams(json.teams || []);
-      setEventName(json.event || '');
+      setTeams(json.teams);
+      setEventName(json.event || eventName);
       setStep('team');
     } catch (e) {
       clearTimeout(timeoutWarning);
@@ -94,16 +115,50 @@ export default function SetupPage() {
     }
   };
 
+  // From the paste-a-URL field
+  const continueFromUrl = () => {
+    const parsed = parseEventUrl(eventUrl);
+    if (!parsed) {
+      setError('Invalid URL. Paste a full AES event URL like: https://results.advancedeventsystems.com/event/XXXXX/divisions/YYYYY/overview');
+      return;
+    }
+    setEventId(parsed.eventId);
+    setDivisionId(parsed.divisionId);
+    loadTeams(parsed.eventId, parsed.divisionId);
+  };
+
+  // From a search result: load the event's divisions, then pick one
+  const pickEvent = async (ev: EventResult) => {
+    setEventId(ev.eventId);
+    setEventName(ev.name);
+    setDivisionId('');
+    setError('');
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/event-info?event=${ev.eventId}`);
+      const json = await res.json();
+      const divs: DivisionOption[] = json.divisions || [];
+      setDivisions(divs);
+      if (divs.length === 1) {
+        setDivisionId(divs[0].id);
+        await loadTeams(ev.eventId, divs[0].id);
+      } else {
+        setStep('division');
+      }
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSave = () => {
-    // Always clear team selection when saving event configuration
-    // User must select a team for each event
     localStorage.removeItem('tracker_defaultTeam');
     localStorage.setItem('tracker_eventId', eventId);
     localStorage.setItem('tracker_divisionId', divisionId);
     localStorage.setItem('tracker_eventName', eventName);
     if (selectedTeam) {
       localStorage.setItem('tracker_defaultTeam', selectedTeam);
-      // Add to saved tournaments list
       const saved = JSON.parse(localStorage.getItem('tracker_savedTournaments') || '[]');
       const exists = saved.some((s: { eventId: string; divisionId: string; teamCode: string }) =>
         s.eventId === eventId && s.divisionId === divisionId && s.teamCode === selectedTeam);
@@ -118,7 +173,6 @@ export default function SetupPage() {
   };
 
   const handleSkipTeam = () => {
-    // Always clear team selection when saving event configuration
     localStorage.removeItem('tracker_defaultTeam');
     localStorage.setItem('tracker_eventId', eventId);
     localStorage.setItem('tracker_divisionId', divisionId);
@@ -133,25 +187,107 @@ export default function SetupPage() {
         <div className="bg-zinc-900 rounded-xl border border-zinc-700 p-6 space-y-6">
           <div>
             <h1 className="text-2xl font-bold text-white mb-1">Tournament Tracker Setup</h1>
-            <p className="text-zinc-400 text-sm">Configure your event and default team</p>
+            <p className="text-zinc-400 text-sm">Search for your tournament, or paste its AES link</p>
           </div>
 
           {step === 'event' && (
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-zinc-300 mb-2">
-                  Event URL
+                  Search tournaments
                 </label>
                 <input
                   type="text"
-                  value={eventUrl}
-                  onChange={e => setEventUrl(e.target.value)}
-                  placeholder="https://results.advancedeventsystems.com/event/XXXXX/divisions/YYYYY/overview"
+                  value={query}
+                  onChange={e => setQuery(e.target.value)}
+                  placeholder="e.g. FAST Pre Nationals"
+                  autoFocus
                   className="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 text-sm rounded-lg px-4 py-3 focus:outline-none focus:border-yellow-500 placeholder-zinc-500"
                 />
-                <p className="text-xs text-zinc-500 mt-1">
-                  Paste the full AES event URL (from the divisions/overview page)
-                </p>
+              </div>
+
+              {/* Results */}
+              {query.trim().length >= 2 && (
+                <div className="space-y-2 max-h-80 overflow-y-auto">
+                  {searching && results.length === 0 && (
+                    <div className="text-zinc-500 text-sm py-2 text-center">Searching…</div>
+                  )}
+                  {!searching && results.length === 0 && (
+                    <div className="text-zinc-500 text-sm py-2 text-center">No tournaments found</div>
+                  )}
+                  {results.map(ev => (
+                    <button
+                      key={ev.eventId}
+                      onClick={() => pickEvent(ev)}
+                      disabled={loading}
+                      className="w-full text-left bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 border border-zinc-700 rounded-lg px-4 py-3 transition-colors"
+                    >
+                      <div className="text-sm font-medium text-zinc-100">{ev.name}</div>
+                      <div className="text-xs text-zinc-400 mt-0.5">
+                        {fmtRange(ev.startDate, ev.endDate)}
+                        {ev.location ? ` · ${ev.location}` : ''}
+                        {ev.isPast ? ' · past' : ''}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {error && (
+                <div className="bg-red-950 border border-red-800 rounded-lg p-3 text-red-300 text-sm">{error}</div>
+              )}
+
+              {/* Paste-a-URL fallback */}
+              <div className="pt-2 border-t border-zinc-800">
+                {!showUrl ? (
+                  <button
+                    onClick={() => setShowUrl(true)}
+                    className="text-zinc-400 hover:text-zinc-200 text-sm"
+                  >
+                    Or paste an AES event URL →
+                  </button>
+                ) : (
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-zinc-300">Event URL</label>
+                    <input
+                      type="text"
+                      value={eventUrl}
+                      onChange={e => setEventUrl(e.target.value)}
+                      placeholder="https://results.advancedeventsystems.com/event/XXXXX/divisions/YYYYY/overview"
+                      className="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 text-sm rounded-lg px-4 py-3 focus:outline-none focus:border-yellow-500 placeholder-zinc-500"
+                    />
+                    <button
+                      onClick={continueFromUrl}
+                      disabled={loading || !eventUrl}
+                      className="w-full bg-yellow-600 hover:bg-yellow-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white font-medium py-3 rounded-lg transition-colors"
+                    >
+                      {loading ? 'Loading…' : 'Continue'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {step === 'division' && (
+            <div className="space-y-4">
+              <div className="text-sm text-zinc-400 bg-zinc-800 rounded-lg p-3">
+                <div className="font-medium text-zinc-200">{eventName}</div>
+                <div className="text-xs">{divisions.length} divisions</div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-zinc-300 mb-2">Division</label>
+                <select
+                  value={divisionId}
+                  onChange={e => setDivisionId(e.target.value)}
+                  className="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 text-sm rounded-lg px-4 py-3 focus:outline-none focus:border-yellow-500"
+                >
+                  <option value="">-- Select a division --</option>
+                  {divisions.map(d => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
               </div>
 
               {error && (
@@ -159,11 +295,18 @@ export default function SetupPage() {
               )}
 
               <button
-                onClick={fetchTeams}
-                disabled={loading || !eventUrl}
-                className="w-full bg-yellow-600 hover:bg-yellow-500 disabled:bg-zinc-700 disabled:text-zinc-400 text-white font-medium py-3 rounded-lg transition-colors"
+                onClick={() => divisionId && loadTeams(eventId, divisionId)}
+                disabled={loading || !divisionId}
+                className="w-full bg-yellow-600 hover:bg-yellow-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white font-medium py-3 rounded-lg transition-colors"
               >
                 {loading ? 'Loading teams…' : 'Continue'}
+              </button>
+
+              <button
+                onClick={() => { setStep('event'); setError(''); }}
+                className="w-full text-zinc-400 hover:text-zinc-200 text-sm py-2"
+              >
+                ← Back to search
               </button>
             </div>
           )}
@@ -192,7 +335,7 @@ export default function SetupPage() {
               </div>
 
               <div className="text-sm text-zinc-400 bg-zinc-800 rounded-lg p-3">
-                <div className="font-medium text-zinc-300 mb-1">Event: {eventName}</div>
+                <div className="font-medium text-zinc-200 mb-1">Event: {eventName}</div>
                 <div className="text-xs">{teams.length} teams found</div>
               </div>
 
@@ -211,8 +354,8 @@ export default function SetupPage() {
               </button>
 
               <button
-                onClick={() => setStep('event')}
-                className="w-full text-zinc-400 hover:text-zinc-400 text-sm py-2"
+                onClick={() => { setStep(divisions.length > 1 ? 'division' : 'event'); setError(''); }}
+                className="w-full text-zinc-400 hover:text-zinc-200 text-sm py-2"
               >
                 ← Back
               </button>
@@ -231,7 +374,7 @@ export default function SetupPage() {
         <div className="mt-4 text-center">
           <button
             onClick={() => router.push('/')}
-            className="text-zinc-500 hover:text-zinc-400 text-sm underline"
+            className="text-zinc-500 hover:text-zinc-300 text-sm underline"
           >
             Cancel
           </button>
