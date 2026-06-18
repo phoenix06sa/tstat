@@ -1,12 +1,36 @@
 # tstat — Tournament Tracker: Project Notes
 
-**Last updated:** June 13, 2026 (originally May 9, 2026)  
+**Last updated:** June 17, 2026 (originally May 9, 2026)  
 **Author:** Built with Hermes Agent, maintained with Claude Code (claude-sonnet-4-6)  
 **GitHub:** https://github.com/phoenix06sa/tstat  
 **Netlify:** auto-deploys from `main`
 
+> Per-session detail lives in `change_logs/` (newest = current behavior). The
+> callouts below summarize changes that supersede older descriptions in this file.
+
+> **⚠️ June 17, 2026 (multi-stage brackets):** Stress-tested on AAU Nationals
+> (131 teams; pool → Crossover/Challenge → gemstone Divisions). See
+> `change_logs/CHANGELOG-2026-06-17.md`. Key points:
+> - **Pool identity is matched by full `R{round}G{group}P{pool}` key**, from the
+>   pool's `CompleteFullName` (not `FullName`, which is just "Pool 6"). The bare
+>   number collides across rounds/groups. Predictions seed from the team's
+>   **latest** pool.
+> - **Multi-stage paths are followed** via AES's text feed refs ("Winner of
+>   R4Challenge4M1") matched to a bracket's `ShortName`, so pool → Challenge →
+>   Championship/Consolation is predicted, not just the first hop.
+> - **Bracket Play shows every ranked division, sorted by finish rank**
+>   (`bracketCards`), team's path highlighted; pool standings/matches stay
+>   team-only. Layout interleaves pool standings + matches per round with
+>   weekday headers; unseeded opponents read "Opponent TBD".
+> - `ordinal()` fixed (was "21th"/"33th").
+
+> **⚠️ June 15, 2026:** Final-standings ties now derive from actual results
+> (consolation/placement matches split same-round losers), and you can **search
+> for a tournament by name** on setup (new `/api/events` proxy + `encodeEventId`).
+> See `change_logs/CHANGELOG-2026-06-15.md`.
+
 > **⚠️ June 13, 2026 (live in-tournament fixes):** First session run against a
-> live event (FAST Pre Nationals). See `CHANGELOG-2026-06-13.md`. Behavior
+> live event (FAST Pre Nationals). See `change_logs/CHANGELOG-2026-06-13.md`. Behavior
 > changes that supersede the descriptions further down:
 > - **All brackets now render the full scored view** (rounds, match cards,
 >   scores, WIN badges) once they're *populated* — not just our own bracket.
@@ -22,7 +46,7 @@
 > - The work section is titled **"Upcoming Work Assignments"**.
 
 > **⚠️ June 11, 2026:** The codebase was restructured and all hardcoded
-> tournament data removed — see `CHANGELOG-2026-06-11.md` for the current
+> tournament data removed — see `change_logs/CHANGELOG-2026-06-11.md` for the current
 > architecture, the final-standings algorithm, and new AES API gotchas
 > (unscheduled-match sentinel, placement-refinement brackets, per-division
 > format variation). The AES API knowledge below remains valid; sections

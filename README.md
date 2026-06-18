@@ -42,5 +42,5 @@ Auto-deploys from `main` on GitHub (`phoenix06sa/tstat`). Build settings come fr
 
 ## Docs
 
-- `NOTES.md` — AES API reference and hard-won platform knowledge
-- `CHANGELOG-*.md` — per-session build logs (newest has the current architecture)
+- `docs/NOTES.md` — AES API reference and hard-won platform knowledge
+- `docs/change_logs/CHANGELOG-*.md` — per-session build logs (newest has the current architecture)
