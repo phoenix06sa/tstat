@@ -25,6 +25,15 @@ interface FuturePath {
   bracketRounds?: BracketRound[];
   bracketTeamCount?: number;
 }
+interface ChainedBracket {
+  bracketName: string; via: string; bracketDate: string; time: string;
+  bracketRounds: BracketRound[]; bracketTeamCount: number; finishRange: string;
+}
+interface BracketCard {
+  bracketName: string; finishRange: string; bracketDate: string; time: string;
+  teamCount: number; bracketRounds: BracketRound[];
+  relation: 'direct' | 'chained' | 'other'; detail: string; sortKey: number;
+}
 interface ActiveBracketMatch {
   matchId: number; matchName: string; time: string; court: string;
   team1: string; team2: string; team1code: string; team2code: string;
@@ -65,6 +74,8 @@ interface TournamentData {
   matches: PoolMatch[];
   workAssignments: WorkAssignment[];
   futurePaths: FuturePath[];
+  chainedPaths: ChainedBracket[];
+  bracketCards: BracketCard[];
   activeBracket: ActiveBracket | null;
   activeBrackets: Record<string, ActiveBracket>;
   finalStandings: { overallRank: number; tied: boolean; teamName: string; bracket: string; bracketRank: number; isUs: boolean }[];
@@ -80,6 +91,21 @@ function timeAgo(iso: string) {
   if (diff < 60) return `${diff}s ago`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   return `${Math.floor(diff / 3600)}h ago`;
+}
+
+const WEEKDAYS: Record<string, string> = { Sun: 'Sunday', Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday', Thu: 'Thursday', Fri: 'Friday', Sat: 'Saturday' };
+const MONTHS: Record<string, string> = { Jan: 'January', Feb: 'February', Mar: 'March', Apr: 'April', May: 'May', Jun: 'June', Jul: 'July', Aug: 'August', Sep: 'September', Oct: 'October', Nov: 'November', Dec: 'December' };
+
+// Split a formatted date like "Tue, Jun 16" into a prominent weekday label
+// ("Tuesday") and a full date ("June 16, 2026"). Year comes from the event's
+// date range since the per-day strings don't carry it.
+function splitDateLabel(formatted: string, year: string): { weekday: string; full: string } {
+  if (!formatted) return { weekday: '', full: '' };
+  const [wd, rest = ''] = formatted.split(', ');
+  const weekday = WEEKDAYS[wd] || '';
+  const m = rest.match(/^([A-Za-z]+)\s+(\d+)$/);
+  const full = m ? `${MONTHS[m[1]] || m[1]} ${m[2]}${year ? `, ${year}` : ''}` : rest;
+  return { weekday, full };
 }
 
 function SetScores({ sets, hasScores, eventComplete }: { sets: SetScore[]; hasScores: boolean; eventComplete?: boolean }) {
@@ -525,107 +551,146 @@ function HomeContent() {
 
         {data && (
           <>
-            {/* Pool standings — one table per pool (re-pooling tournaments have several) */}
-            {(data.pools && data.pools.length > 0
-              ? data.pools
-              : data.poolStandings.length > 0
-                ? [{ poolName: data.poolName, poolCourt: data.poolCourt, date: '', standings: data.poolStandings }]
-                : []
-            ).map((pool, pi) => (
-              <div key={pi} className="bg-zinc-900 rounded-xl border border-zinc-700 overflow-hidden">
-                <div className="px-4 py-3 border-b border-zinc-700">
-                  <div className="text-xs text-zinc-400 uppercase tracking-widest">
-                    Pool Standings{pool.date ? ` — ${pool.date}` : ''}
-                  </div>
-                  <div className="font-semibold text-white mt-0.5">{pool.poolName}</div>
-                  <div className="text-zinc-400 text-xs">{pool.poolCourt}</div>
-                </div>
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-zinc-400 text-xs border-b border-zinc-700">
-                      <th className="text-left px-4 py-2">Team</th>
-                      <th className="text-center px-2 py-2">M W-L</th>
-                      <th className="text-center px-2 py-2">S W-L</th>
-                      <th className="text-center px-2 py-2">Rank</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pool.standings.map((s, i) => (
-                      <tr key={i} className={`border-b border-zinc-700 last:border-0 ${s.isUs ? 'bg-yellow-950/40' : ''}`}>
-                        <td className="px-4 py-3">
-                          <div className={`font-medium ${s.isUs ? 'text-yellow-300' : 'text-zinc-200'}`}>
-                            {s.isUs ? '★ ' : ''}{s.teamName}
-                          </div>
-                          <div className="text-zinc-500 text-xs">{s.teamCode}</div>
-                          {s.tiebreaker && s.finishRank !== null && (
-                            <div className={`text-xs mt-0.5 ${s.isUs ? 'text-yellow-600' : 'text-zinc-500'}`}>
-                              ↑ {s.tiebreaker}
-                            </div>
-                          )}
-                        </td>
-                        <td className="text-center px-2 py-3 text-zinc-300">{s.matchesWon}-{s.matchesLost}</td>
-                        <td className="text-center px-2 py-3 text-zinc-300">{s.setsWon}-{s.setsLost}</td>
-                        <td className="text-center px-2 py-3">
-                          {s.finishRank ? (
-                            <span className={`rounded px-2 py-0.5 text-xs font-bold ${s.isUs ? 'bg-yellow-800 text-yellow-200' : 'bg-zinc-700 text-zinc-200'}`}>
-                              {s.finishRankText || `#${s.finishRank}`}
-                            </span>
-                          ) : <span className="text-zinc-500 text-xs">—</span>}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ))}
+            {/* Each round: its pool standings, then that round's matches */}
+            {(() => {
+              const pools = data.pools && data.pools.length > 0
+                ? data.pools
+                : data.poolStandings.length > 0
+                  ? [{ poolName: data.poolName, poolCourt: data.poolCourt, date: '', standings: data.poolStandings }]
+                  : [];
 
-            {/* All matches (pool + bracket), grouped by day */}
-            <div>
-              <div className="text-xs text-zinc-400 uppercase tracking-widest mb-3 px-1">Matches</div>
-              {(() => {
-                const matchesByDate: Record<string, PoolMatch[]> = {};
-                // Bracket matches live in the Bracket Play section below, so
-                // the chronological list shows pool play only
-                for (const m of data.matches.filter(m => m.isPoolPlay)) {
-                  const d = m.date || 'Date TBA';
-                  if (!matchesByDate[d]) matchesByDate[d] = [];
-                  matchesByDate[d].push(m);
-                }
-                return Object.entries(matchesByDate).map(([date, dayMatches]) => (
-                  <div key={date} className="mb-6">
-                    <div className="text-xs text-zinc-400 uppercase tracking-wider mb-2 px-1 font-semibold">{date}</div>
-                    <div className="space-y-3">
-                      {dayMatches.map((m, i) => (
-                        <div key={i} className={`bg-zinc-900 rounded-xl border p-4 ${
-                          m.weWon === true ? 'border-emerald-800' :
-                          m.weWon === false ? 'border-red-900' : 'border-zinc-700'
-                        }`}>
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                <span className="text-xs text-zinc-400 font-mono">{m.matchName}</span>
-                                <span className="text-xs text-zinc-500">{m.time}</span>
-                                <span className="text-xs text-zinc-500">{m.court}</span>
-                                {m.isPoolPlay && <span className="text-xs bg-blue-900/50 text-blue-300 px-1.5 py-0.5 rounded">Pool</span>}
-                                {!m.isPoolPlay && <span className="text-xs bg-purple-900/50 text-purple-300 px-1.5 py-0.5 rounded">Bracket</span>}
-                              </div>
-                              <div className="font-semibold text-white text-base">vs {m.opponent}</div>
-                              <SetScores sets={m.sets} hasScores={m.hasScores} eventComplete={data.eventComplete} />
+              // Pool matches grouped by date (bracket matches live in Bracket Play)
+              const matchesByDate: Record<string, PoolMatch[]> = {};
+              for (const m of data.matches.filter(m => m.isPoolPlay)) {
+                const d = m.date || 'Date TBA';
+                if (!matchesByDate[d]) matchesByDate[d] = [];
+                matchesByDate[d].push(m);
+              }
+              const usedDates = new Set<string>();
+              const singlePool = pools.length <= 1;
+              const year = (data.dates.match(/\b(20\d{2})\b/) || [])[1] || '';
+
+              const matchCard = (m: PoolMatch, i: number) => (
+                <div key={i} className={`bg-zinc-900 rounded-xl border p-4 ${
+                  m.weWon === true ? 'border-emerald-800' :
+                  m.weWon === false ? 'border-red-900' : 'border-zinc-700'
+                }`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className="text-xs text-zinc-400 font-mono">{m.matchName}</span>
+                        <span className="text-xs text-zinc-500">{m.time}</span>
+                        <span className="text-xs text-zinc-500">{m.court}</span>
+                        {m.isPoolPlay && <span className="text-xs bg-blue-900/50 text-blue-300 px-1.5 py-0.5 rounded">Pool</span>}
+                        {!m.isPoolPlay && <span className="text-xs bg-purple-900/50 text-purple-300 px-1.5 py-0.5 rounded">Bracket</span>}
+                      </div>
+                      {(m.opponent || '').trim()
+                        ? <div className="font-semibold text-white text-base">vs {m.opponent}</div>
+                        : <div className="font-semibold text-zinc-400 italic text-base">Opponent TBD</div>}
+                      <SetScores sets={m.sets} hasScores={m.hasScores} eventComplete={data.eventComplete} />
+                    </div>
+                    {m.weWon !== null && (
+                      <div className={`text-xs font-bold px-2 py-1 rounded shrink-0 ${m.weWon ? 'bg-emerald-900 text-emerald-300' : 'bg-red-900 text-red-300'}`}>
+                        {m.weWon ? 'WIN' : 'LOSS'}
+                      </div>
+                    )}
+                  </div>
+                  {m.workTeam && <div className="mt-2 text-xs text-zinc-500 border-t border-zinc-700 pt-2">Work: {m.workTeam}</div>}
+                </div>
+              );
+
+              const standingsTable = (pool: PoolInfo, dl: { weekday: string; full: string }) => (
+                <div className="bg-zinc-900 rounded-xl border border-zinc-700 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-zinc-700">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <div className="text-base font-bold text-white">{dl.weekday ? `${dl.weekday}: ` : ''}Pool Standings</div>
+                      {dl.full && <div className="text-xs text-zinc-400 shrink-0">{dl.full}</div>}
+                    </div>
+                    <div className="text-zinc-300 text-sm mt-0.5">{pool.poolName}</div>
+                    <div className="text-zinc-500 text-xs">{pool.poolCourt}</div>
+                  </div>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-zinc-400 text-xs border-b border-zinc-700">
+                        <th className="text-left px-4 py-2">Team</th>
+                        <th className="text-center px-2 py-2">M W-L</th>
+                        <th className="text-center px-2 py-2">S W-L</th>
+                        <th className="text-center px-2 py-2">Rank</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pool.standings.map((s, i) => (
+                        <tr key={i} className={`border-b border-zinc-700 last:border-0 ${s.isUs ? 'bg-yellow-950/40' : ''}`}>
+                          <td className="px-4 py-3">
+                            <div className={`font-medium ${s.isUs ? 'text-yellow-300' : 'text-zinc-200'}`}>
+                              {s.isUs ? '★ ' : ''}{s.teamName}
                             </div>
-                            {m.weWon !== null && (
-                              <div className={`text-xs font-bold px-2 py-1 rounded shrink-0 ${m.weWon ? 'bg-emerald-900 text-emerald-300' : 'bg-red-900 text-red-300'}`}>
-                                {m.weWon ? 'WIN' : 'LOSS'}
+                            <div className="text-zinc-500 text-xs">{s.teamCode}</div>
+                            {s.tiebreaker && s.finishRank !== null && (
+                              <div className={`text-xs mt-0.5 ${s.isUs ? 'text-yellow-600' : 'text-zinc-500'}`}>
+                                ↑ {s.tiebreaker}
                               </div>
                             )}
-                          </div>
-                          {m.workTeam && <div className="mt-2 text-xs text-zinc-500 border-t border-zinc-700 pt-2">Work: {m.workTeam}</div>}
-                        </div>
+                          </td>
+                          <td className="text-center px-2 py-3 text-zinc-300">{s.matchesWon}-{s.matchesLost}</td>
+                          <td className="text-center px-2 py-3 text-zinc-300">{s.setsWon}-{s.setsLost}</td>
+                          <td className="text-center px-2 py-3">
+                            {s.finishRank ? (
+                              <span className={`rounded px-2 py-0.5 text-xs font-bold ${s.isUs ? 'bg-yellow-800 text-yellow-200' : 'bg-zinc-700 text-zinc-200'}`}>
+                                {s.finishRankText || `#${s.finishRank}`}
+                              </span>
+                            ) : <span className="text-zinc-500 text-xs">—</span>}
+                          </td>
+                        </tr>
                       ))}
-                    </div>
-                  </div>
-                ));
-              })()}
-            </div>
+                    </tbody>
+                  </table>
+                </div>
+              );
+
+              return (
+                <>
+                  {pools.map((pool, pi) => {
+                    const dl = splitDateLabel(pool.date, year);
+                    let roundMatches: PoolMatch[] = [];
+                    if (pool.date && matchesByDate[pool.date]) {
+                      roundMatches = matchesByDate[pool.date];
+                      usedDates.add(pool.date);
+                    } else if (singlePool) {
+                      roundMatches = data.matches.filter(m => m.isPoolPlay);
+                      Object.keys(matchesByDate).forEach(k => usedDates.add(k));
+                    }
+                    return (
+                      <div key={pi} className="space-y-3">
+                        {standingsTable(pool, dl)}
+                        {roundMatches.length > 0 && (
+                          <div className="space-y-3">
+                            <div className="flex items-baseline justify-between gap-2 px-1">
+                              <div className="text-base font-bold text-white">{dl.weekday ? `${dl.weekday}: ` : ''}Matches</div>
+                              {dl.full && <div className="text-xs text-zinc-400 shrink-0">{dl.full}</div>}
+                            </div>
+                            {roundMatches.map(matchCard)}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {/* Safety net: any pool matches whose date didn't line up with a round */}
+                  {Object.entries(matchesByDate).filter(([d]) => !usedDates.has(d)).map(([date, ms]) => {
+                    const dl = splitDateLabel(date, year);
+                    return (
+                      <div key={date} className="space-y-3">
+                        <div className="flex items-baseline justify-between gap-2 px-1">
+                          <div className="text-base font-bold text-white">{dl.weekday ? `${dl.weekday}: ` : ''}Matches</div>
+                          {(dl.full || date) && <div className="text-xs text-zinc-400 shrink-0">{dl.full || date}</div>}
+                        </div>
+                        {ms.map(matchCard)}
+                      </div>
+                    );
+                  })}
+                </>
+              );
+            })()}
 
             {/* Work assignments */}
             {data.workAssignments.length > 0 && (
@@ -645,117 +710,115 @@ function HomeContent() {
               </div>
             )}
 
-            {/* Bracket Play — full bracket tree for each bracket */}
-            {data.futurePaths.length > 0 && (
+            {/* Bracket Play — every division in finish-rank order; our path highlighted */}
+            {data.bracketCards.length > 0 && (
               <div>
                 <div className="text-xs text-zinc-400 uppercase tracking-widest mb-1 px-1">Bracket Play</div>
-                <div className="text-xs text-zinc-500 mb-3 px-1">Pool finish determines bracket seeding</div>
+                <div className="text-xs text-zinc-500 mb-3 px-1">Our path highlighted · all divisions by finish</div>
                 <div className="space-y-4">
-                  {/* Group paths by bracket */}
                   {(() => {
-                    const bracketGroups: Record<string, FuturePath[]> = {};
-                    for (const f of data.futurePaths) {
-                      const key = f.nextPlay || 'TBD';
-                      if (!bracketGroups[key]) bracketGroups[key] = [];
-                      bracketGroups[key].push(f);
-                    }
-                    return Object.entries(bracketGroups).map(([bracketName, paths]) => {
-                      const firstPath = paths[0];
-                      const hasUs = paths.some(p => p.isUs);
-                      const range = firstPath.finishRange?.split('\n') || [];
-                      const teamCount = firstPath.bracketTeamCount || 0;
-                      const rounds = firstPath.bracketRounds || [];
-                      // Our bracket always renders the live scored view. Other
-                      // brackets switch from the static who-plays-who tree to
-                      // the same scored view once their teams are slotted.
+                    // Our bracket always renders the live scored view; other
+                    // brackets switch from the static who-plays-who tree to the
+                    // scored view once their teams are slotted.
+                    const viewFor = (bracketName: string) => {
                       const ourActive = data.activeBracket?.bracketName === bracketName ? data.activeBracket : null;
                       const otherView = !ourActive ? (data.activeBrackets?.[bracketName] || null) : null;
-                      const view = ourActive || (otherView?.populated ? otherView : null);
-                      const startTime = view?.startTime || firstPath.time;
-                      return (
-                        <div key={bracketName} className={`bg-zinc-900 rounded-xl border overflow-hidden ${hasUs ? 'border-yellow-700' : 'border-zinc-700'}`}>
-                          {/* Bracket header */}
-                          <div className="px-4 pt-4 pb-3">
-                            <div className="flex items-center justify-between mb-1">
-                              <div className="font-semibold text-white text-base">{bracketName}</div>
-                              {range.length > 1 && (
-                                <div className="text-xs text-emerald-400 font-semibold">{range[1]?.replace('Finish: ', '')}</div>
-                              )}
-                            </div>
-                            <div className="text-zinc-400 text-xs">
-                              {teamCount > 0 ? `${teamCount} teams` : ''}
-                              {firstPath.bracketDate ? ` · ${firstPath.bracketDate}` : ''}
-                              {startTime ? ` · starts ${startTime}` : ''}
-                            </div>
-                            {/* Our pool entries */}
-                            <div className="mt-2 text-xs text-zinc-400">
-                              <span className="text-zinc-400">Our pool → </span>
-                              {paths.map((f, i) => (
-                                <span key={i} className={f.isUs ? 'text-yellow-300 font-semibold' : 'text-zinc-300'}>
-                                  {i > 0 ? ', ' : ''}{f.isUs ? '★ ' : ''}{f.finishText}{f.seed ? ` (seed ${f.seed})` : ''}
-                                </span>
-                              ))}
-                            </div>
+                      return ourActive || (otherView?.populated ? otherView : null);
+                    };
+                    const renderBody = (bracketName: string, rounds: BracketRound[]) => {
+                      const view = viewFor(bracketName);
+                      if (view) {
+                        return (
+                          <div className="border-t border-zinc-700">
+                            {view.winnersRounds.map((round, ri) => (
+                              <div key={ri} className="border-b border-zinc-700/50 last:border-0">
+                                <div className="px-4 py-2 bg-zinc-800/30">
+                                  <span className={`text-xs font-bold uppercase tracking-wider ${ri === view.winnersRounds.length - 1 ? 'text-yellow-500' : 'text-emerald-600'}`}>
+                                    {ri === view.winnersRounds.length - 1 ? '🏆 ' : ''}{round.label}
+                                  </span>
+                                </div>
+                                <div className="px-4 py-2 space-y-2">
+                                  {round.matches.map((m, mi) => renderMatch(m, mi, data.teamCode))}
+                                </div>
+                              </div>
+                            ))}
+                            {view.placementMatches.length > 0 && (
+                              <div>
+                                <div className="px-4 py-2 bg-zinc-800/30">
+                                  <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Placement Matches</span>
+                                </div>
+                                <div className="px-4 py-2 space-y-2">
+                                  {view.placementMatches.map((m, mi) => renderMatch(m, mi, data.teamCode))}
+                                </div>
+                              </div>
+                            )}
                           </div>
+                        );
+                      }
+                      if (rounds.length > 0) {
+                        return (
+                          <div className="border-t border-zinc-700">
+                            {rounds.map((round, ri) => (
+                              <div key={ri} className="border-b border-zinc-700/50 last:border-0">
+                                <div className="px-4 py-2 bg-zinc-800/30">
+                                  <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">{round.label}</span>
+                                </div>
+                                <div className="px-4 py-2 space-y-1.5">
+                                  {round.matches.map((m: BracketRoundMatch, mi: number) => (
+                                    <div key={mi} className={`flex items-center text-xs px-2 py-1.5 rounded ${m.hasUs ? 'bg-yellow-950/40 border border-yellow-800/50' : 'bg-zinc-800/30'}`}>
+                                      <span className={`flex-1 truncate ${m.hasUs ? 'text-yellow-300 font-semibold' : 'text-zinc-300'}`}>{m.team1}</span>
+                                      <span className="text-zinc-500 mx-2 shrink-0">vs</span>
+                                      <span className={`flex-1 text-right truncate ${m.hasUs ? 'text-yellow-300 font-semibold' : 'text-zinc-300'}`}>{m.team2}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      }
+                      return null;
+                    };
 
-                          {/* Scored view, round by round (our bracket always;
-                              other brackets once their teams are slotted) */}
-                          {view ? (
-                            <div className="border-t border-zinc-700">
-                              {view.winnersRounds.map((round, ri) => (
-                                <div key={ri} className="border-b border-zinc-700/50 last:border-0">
-                                  <div className="px-4 py-2 bg-zinc-800/30">
-                                    <span className={`text-xs font-bold uppercase tracking-wider ${ri === view.winnersRounds.length - 1 ? 'text-yellow-500' : 'text-emerald-600'}`}>
-                                      {ri === view.winnersRounds.length - 1 ? '🏆 ' : ''}{round.label}
-                                    </span>
-                                  </div>
-                                  <div className="px-4 py-2 space-y-2">
-                                    {round.matches.map((m, mi) => renderMatch(m, mi, data.teamCode))}
-                                  </div>
+                    return (
+                      <>
+                        {data.bracketCards.map((c) => {
+                          const ours = c.relation !== 'other';
+                          const startTime = viewFor(c.bracketName)?.startTime || c.time;
+                          // Show every bracket's tree (predicted who-plays-who now,
+                          // live scored once teams are slotted) — on path or not
+                          const rounds = c.bracketRounds;
+                          return (
+                            <div key={c.bracketName} className={`bg-zinc-900 rounded-xl border overflow-hidden ${ours ? 'border-yellow-700' : 'border-zinc-700'}`}>
+                              <div className="px-4 pt-4 pb-3">
+                                <div className="flex items-center justify-between mb-1 gap-2">
+                                  <div className={`font-semibold text-base ${ours ? 'text-white' : 'text-zinc-300'}`}>{c.bracketName}</div>
+                                  {c.finishRange && (
+                                    <div className={`text-xs font-semibold shrink-0 ${ours ? 'text-emerald-400' : 'text-zinc-500'}`}>{c.finishRange}</div>
+                                  )}
                                 </div>
-                              ))}
-                              {view.placementMatches.length > 0 && (
-                                <div>
-                                  <div className="px-4 py-2 bg-zinc-800/30">
-                                    <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Placement Matches</span>
-                                  </div>
-                                  <div className="px-4 py-2 space-y-2">
-                                    {view.placementMatches.map((m, mi) => renderMatch(m, mi, data.teamCode))}
-                                  </div>
+                                <div className="text-zinc-500 text-xs">
+                                  {c.teamCount > 0 ? `${c.teamCount} teams` : ''}
+                                  {c.bracketDate ? ` · ${c.bracketDate}` : ''}
+                                  {startTime ? ` · starts ${startTime}` : ''}
                                 </div>
-                              )}
+                                {c.detail && (
+                                  <div className="mt-2 text-xs text-zinc-300">{c.detail}</div>
+                                )}
+                              </div>
+                              {renderBody(c.bracketName, rounds)}
                             </div>
-                          ) : rounds.length > 0 && (
-                            /* Other brackets: static who-plays-who tree */
-                            <div className="border-t border-zinc-700">
-                              {rounds.map((round, ri) => (
-                                <div key={ri} className="border-b border-zinc-700/50 last:border-0">
-                                  <div className="px-4 py-2 bg-zinc-800/30">
-                                    <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">{round.label}</span>
-                                  </div>
-                                  <div className="px-4 py-2 space-y-1.5">
-                                    {round.matches.map((m: BracketRoundMatch, mi: number) => (
-                                      <div key={mi} className={`flex items-center text-xs px-2 py-1.5 rounded ${m.hasUs ? 'bg-yellow-950/40 border border-yellow-800/50' : 'bg-zinc-800/30'}`}>
-                                        <span className={`flex-1 truncate ${m.hasUs ? 'text-yellow-300 font-semibold' : 'text-zinc-300'}`}>{m.team1}</span>
-                                        <span className="text-zinc-500 mx-2 shrink-0">vs</span>
-                                        <span className={`flex-1 text-right truncate ${m.hasUs ? 'text-yellow-300 font-semibold' : 'text-zinc-300'}`}>{m.team2}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    });
+                          );
+                        })}
+                      </>
+                    );
                   })()}
                 </div>
               </div>
             )}
 
             {/* Fallback: scored bracket view when our bracket isn't among the Bracket Play cards */}
-            {data.activeBracket && !data.futurePaths.some(f => f.nextPlay === data.activeBracket!.bracketName) && (
+            {data.activeBracket && !data.bracketCards.some(c => c.bracketName === data.activeBracket!.bracketName) && (
               <div>
                 <div className="text-xs text-zinc-400 uppercase tracking-widest mb-3 px-1">
                   Bracket Results — {data.activeBracket.bracketName}

@@ -3,7 +3,7 @@ import { aes, generateDateRange, fmtDate, fmtDateLong } from '@/lib/aes';
 import type { DayPlays, BracketEntry } from '@/lib/tournament/types';
 import { buildPoolStandings } from '@/lib/tournament/standings';
 import { buildMatches, buildWorkAssignments } from '@/lib/tournament/matches';
-import { buildFinishRanges, buildBracketPaths } from '@/lib/tournament/bracket-paths';
+import { buildFinishRanges, buildBracketPaths, normalizePoolKey } from '@/lib/tournament/bracket-paths';
 import { buildActiveBracket, buildAllBracketViews } from '@/lib/tournament/active-bracket';
 import { buildFinalStandings } from '@/lib/tournament/final-standings';
 
@@ -122,7 +122,15 @@ export async function GET(req: Request) {
     const matches = buildMatches(past, current, TEAM_ID, playDates);
     const workAssignments = buildWorkAssignments(work);
 
-    const poolNumber = ourPool.FullName?.match(/Pool (\d+)/)?.[1] || ourPool.ShortName?.replace('P', '') || '?';
+    // Predictions seed from the team's LATEST pool — in re-pooling events the
+    // final brackets are seeded off the last round, and pool identities are
+    // matched by full round/group/pool key (CompleteFullName) to avoid
+    // collisions between same-numbered pools in different rounds/groups.
+    const seedPoolEntry = ourPools[ourPools.length - 1];
+    const seedPool = seedPoolEntry.pool;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const seedTeams: any[] = seedPool.Teams || [];
+    const poolKey = normalizePoolKey(seedPool.CompleteFullName || seedPool.FullName || '');
 
     // Collect ALL brackets across all days for lookup
     const allBrackets: BracketEntry[] = [];
@@ -139,13 +147,13 @@ export async function GET(req: Request) {
     const finalBrackets = finalDay ? finalDay.plays.filter((p: { PlayType: number }) => p.PlayType === 1) : [];
     const { bracketFinishRanges, totalTeams } = buildFinishRanges(finalBrackets);
 
-    const { futurePaths } = buildBracketPaths({
+    const { futurePaths, chainedPaths, bracketCards } = buildBracketPaths({
       allBrackets,
       allDaysPlays,
-      rawTeams,
+      rawTeams: seedTeams,
       teamCode,
       teamName: TEAM_NAME,
-      poolNumber,
+      poolKey,
       bracketFinishRanges,
     });
 
@@ -177,6 +185,8 @@ export async function GET(req: Request) {
       matches,
       workAssignments,
       futurePaths,
+      chainedPaths,
+      bracketCards,
       activeBracket,
       activeBrackets,
       finalStandings,

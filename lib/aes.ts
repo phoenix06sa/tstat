@@ -91,7 +91,9 @@ export function stripAllSuffixes(name: string): string {
 }
 
 export function ordinal(n: number): string {
-  return n === 1 ? '1st' : n === 2 ? '2nd' : n === 3 ? '3rd' : `${n}th`;
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
 }
 
 // Extract all team text references from a bracket play's tree
