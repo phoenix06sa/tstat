@@ -164,6 +164,8 @@ export interface FuturePath {
   seed: number | null;
   bracketRounds: BracketRound[];
   bracketTeamCount: number;
+  nextType: 'pool' | 'bracket' | null;
+  nextOpponents: string[];
 }
 
 interface LeafMatchup {
@@ -438,6 +440,72 @@ export function buildBracketPaths(input: BracketPathsInput): {
     }
   }
 
+  // ─── Re-pool prediction (pool → next pool round) ───
+  // Multi-round-pool ("re-pooling") formats seed the NEXT pool round from the
+  // current one, and AES publishes that seeding before play as slot refs in the
+  // next pool's TeamText ("1st-P3", "2nd-P2"). The bracket map above only covers
+  // pool → bracket; this covers pool → pool, so predictions light up even when
+  // the bracket stage isn't seeded yet. Generic: keyed off the team's current
+  // pool round + number, so it works for any re-pooling event.
+  const roundFrom = (key: string): number | null => { const m = key.match(/R(\d+)/); return m ? parseInt(m[1]) : null; };
+  const poolNumFrom = (key: string): string | null => { const m = key.match(/P(\d+)/); return m ? m[1] : null; };
+  const ourRound = roundFrom(poolKey);
+  const ourPoolNum = poolNumFrom(poolKey);
+
+  // Resolve a slot ref to a real team name once its source pool finishes, else
+  // a readable placeholder. Bare refs ("2nd-P2") carry no round context, so
+  // they resolve against the supplied source round.
+  const resolveRef = (text: string, srcRound: number | null): string => {
+    if (!text) return '';
+    if (/^(Winner|Loser) of/i.test(text)) return text;
+    const ref = parsePoolRef(text);
+    if (!ref) return stripAllSuffixes(text);
+    const pool = allDaysPlays.flatMap(d => d.plays)
+      .filter((p: { PlayType: number }) => p.PlayType === 0)
+      .find((p: { CompleteFullName?: string; FullName?: string }) => {
+        const k = normalizePoolKey(p.CompleteFullName || p.FullName || '');
+        if (k === ref.poolKey) return true;
+        if (/^P\d+$/.test(ref.poolKey)) return roundFrom(k) === srcRound && poolNumFrom(k) === ref.poolNum;
+        return false;
+      });
+    if (pool) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const teams = [...((pool as any).Teams || [])].sort((a: any, b: any) => (a.FinishRank ?? 99) - (b.FinishRank ?? 99));
+      const team = teams[ref.rank - 1];
+      if (team?.FinishRank !== null && team?.FinishRank !== undefined) return team.TeamName;
+    }
+    return `${ordinal(ref.rank)} Pool ${ref.poolNum}`;
+  };
+
+  type RepoolDest = { poolName: string; court: string; date: string; opponents: string[] };
+  const repoolByRank: Record<number, RepoolDest> = {};
+  if (ourRound !== null && ourPoolNum) {
+    for (const dayData of allDaysPlays) {
+      for (const play of dayData.plays) {
+        if (play.PlayType !== 0) continue;
+        const destKey = normalizePoolKey(play.CompleteFullName || play.FullName || '');
+        // Only the immediate next pool round; bare refs in it point to our round
+        if (roundFrom(destKey) !== ourRound + 1) continue;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const slots = (play.Teams || []).map((t: any) => ({ text: t.TeamText || '', ref: parsePoolRef(t.TeamText || '') }));
+        for (let i = 0; i < slots.length; i++) {
+          const s = slots[i];
+          if (!s.ref) continue;
+          const pointsToUs = s.ref.poolKey === poolKey ||
+            (/^P\d+$/.test(s.ref.poolKey) && s.ref.poolNum === ourPoolNum);
+          if (!pointsToUs || repoolByRank[s.ref.rank]) continue;
+          repoolByRank[s.ref.rank] = {
+            poolName: play.CompleteFullName || play.FullName,
+            court: play.Courts?.[0]?.Name || '',
+            date: fmtDate(dayData.date),
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            opponents: slots.filter((_: any, j: number) => j !== i).map((o: { text: string }) => resolveRef(o.text, ourRound)).filter(Boolean),
+          };
+        }
+      }
+    }
+  }
+
   // Also try matching by team name/code for completed pool play
   function findBracketForTeam(teamText: string, name: string): { bracketName: string; court: string; time: string; date: string } | null {
     for (const { date, play } of allBrackets) {
@@ -483,6 +551,12 @@ export function buildBracketPaths(input: BracketPathsInput): {
       bracketInfo = findBracketForTeam(teamText, teamAtRank.TeamName);
     }
 
+    // No bracket for this finish yet? Fall back to a re-pool destination —
+    // i.e. the next pool round this finish feeds into.
+    const repoolDest = bracketInfo ? undefined : repoolByRank[poolRank];
+    const nextType: 'pool' | 'bracket' | null = bracketInfo ? 'bracket' : repoolDest ? 'pool' : null;
+    const nextOpponents = repoolDest?.opponents ?? [];
+
     // Determine finish range with ranking prediction
     let finishRange = '';
     if (bracketInfo) {
@@ -492,6 +566,8 @@ export function buildBracketPaths(input: BracketPathsInput): {
       } else {
         finishRange = bracketInfo.bracketName;
       }
+    } else if (repoolDest) {
+      finishRange = repoolDest.poolName;
     } else {
       finishRange = 'Bracket TBD';
     }
@@ -556,15 +632,17 @@ export function buildBracketPaths(input: BracketPathsInput): {
       rank: poolRank,
       isUs,
       teamAtRank: displayTeamName,
-      nextPlay: bracketInfo?.bracketName || 'TBD',
-      nextPlayShort: bracketInfo?.bracketName || 'TBD',
-      court: bracketInfo?.court || '',
+      nextPlay: bracketInfo?.bracketName || repoolDest?.poolName || 'TBD',
+      nextPlayShort: bracketInfo?.bracketName || repoolDest?.poolName || 'TBD',
+      court: bracketInfo?.court || repoolDest?.court || '',
       time: (bracketInfo && bracketTrees[bracketInfo.bracketName]?.startTime) || bracketInfo?.time || '',
-      bracketDate: bracketInfo?.date || '',
+      bracketDate: bracketInfo?.date || repoolDest?.date || '',
       workCourt: '',
       workTime: '',
       opponentResolved,
       finishRange,
+      nextType,
+      nextOpponents,
       seed: mappedBracket?.seed ?? null,
       bracketRounds,
       bracketTeamCount,

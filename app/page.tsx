@@ -24,6 +24,8 @@ interface FuturePath {
   seed?: number | null;
   bracketRounds?: BracketRound[];
   bracketTeamCount?: number;
+  nextType?: 'pool' | 'bracket' | null;
+  nextOpponents?: string[];
 }
 interface ChainedBracket {
   bracketName: string; via: string; bracketDate: string; time: string;
@@ -373,16 +375,18 @@ function HomeContent() {
         </div>
         <div className={`flex items-center justify-between py-1 ${m.team1code.toLowerCase() === teamCode ? 'text-yellow-300' : m.hasScores && !m.team1Won ? 'text-zinc-500' : isPending1 ? 'text-zinc-500 italic' : 'text-zinc-200'}`}>
           <span className="text-sm font-medium">
-            {m.team1code.toLowerCase() === teamCode ? '★ ' : ''}{displayTeam1}
+            {displayTeam1}
           </span>
           {m.hasScores && m.team1Won && <span className="text-xs bg-emerald-900 text-emerald-300 px-2 py-0.5 rounded font-bold">WIN</span>}
+          {m.hasScores && !m.team1Won && m.team1code.toLowerCase() === teamCode && <span className="text-xs bg-red-900 text-red-300 px-2 py-0.5 rounded font-bold">LOST</span>}
         </div>
         <div className="border-t border-zinc-700 my-1" />
         <div className={`flex items-center justify-between py-1 ${m.team2code.toLowerCase() === teamCode ? 'text-yellow-300' : m.hasScores && !m.team2Won ? 'text-zinc-500' : isPending2 ? 'text-zinc-500 italic' : 'text-zinc-200'}`}>
           <span className="text-sm font-medium">
-            {m.team2code.toLowerCase() === teamCode ? '★ ' : ''}{displayTeam2}
+            {displayTeam2}
           </span>
           {m.hasScores && m.team2Won && <span className="text-xs bg-emerald-900 text-emerald-300 px-2 py-0.5 rounded font-bold">WIN</span>}
+          {m.hasScores && !m.team2Won && m.team2code.toLowerCase() === teamCode && <span className="text-xs bg-red-900 text-red-300 px-2 py-0.5 rounded font-bold">LOST</span>}
         </div>
         {m.hasScores && m.sets.length > 0 && (
           <div className="flex gap-2 mt-2 pt-2 border-t border-zinc-700">
@@ -600,7 +604,7 @@ function HomeContent() {
               );
 
               const standingsTable = (pool: PoolInfo, dl: { weekday: string; full: string }) => (
-                <div className="bg-zinc-900 rounded-xl border border-zinc-700 overflow-hidden">
+                <div className="bg-zinc-900 rounded-xl border border-zinc-700 overflow-x-auto">
                   <div className="px-4 py-3 border-b border-zinc-700">
                     <div className="flex items-baseline justify-between gap-2">
                       <div className="text-base font-bold text-white">{dl.weekday ? `${dl.weekday}: ` : ''}Pool Standings</div>
@@ -623,7 +627,7 @@ function HomeContent() {
                         <tr key={i} className={`border-b border-zinc-700 last:border-0 ${s.isUs ? 'bg-yellow-950/40' : ''}`}>
                           <td className="px-4 py-3">
                             <div className={`font-medium ${s.isUs ? 'text-yellow-300' : 'text-zinc-200'}`}>
-                              {s.isUs ? '★ ' : ''}{s.teamName}
+                              {s.teamName}
                             </div>
                             <div className="text-zinc-500 text-xs">{s.teamCode}</div>
                             {s.tiebreaker && s.finishRank !== null && (
@@ -709,6 +713,37 @@ function HomeContent() {
                 </div>
               </div>
             )}
+
+            {/* Predicted Next Round — re-pool formats seed the next pool round
+                from this one; show where each finish leads before brackets seed */}
+            {(() => {
+              const repool = data.futurePaths.filter(f => f.nextType === 'pool');
+              if (repool.length === 0) return null;
+              return (
+                <div>
+                  <div className="text-xs text-zinc-400 uppercase tracking-widest mb-1 px-1">Predicted Next Round</div>
+                  <div className="text-xs text-zinc-500 mb-3 px-1">Where each pool finish leads · opponents resolve as pools complete</div>
+                  <div className="space-y-3">
+                    {repool.map((f) => (
+                      <div key={f.rank} className="bg-zinc-900 rounded-xl border border-zinc-700 px-4 py-3">
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <span className="text-sm font-semibold text-yellow-300">{f.finishText}</span>
+                          <span className="text-xs text-zinc-500">
+                            {f.bracketDate || ''}{f.court ? ` · ${f.court}` : ''}
+                          </span>
+                        </div>
+                        <div className="text-sm text-zinc-200">→ {f.nextPlay}</div>
+                        {f.nextOpponents && f.nextOpponents.length > 0 && (
+                          <div className="mt-1 text-xs text-zinc-400">
+                            vs {f.nextOpponents.join(' · ')}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Bracket Play — every division in finish-rank order; our path highlighted */}
             {data.bracketCards.length > 0 && (
@@ -876,7 +911,7 @@ function HomeContent() {
             {data.finalStandings && data.finalStandings.length > 0 && (
               <div>
                 <div className="text-xs text-zinc-400 uppercase tracking-widest mb-3 px-1">Final Standings</div>
-                <div className="bg-zinc-900 rounded-xl border border-zinc-700 overflow-hidden">
+                <div className="bg-zinc-900 rounded-xl border border-zinc-700 overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-zinc-400 text-xs border-b border-zinc-700">
@@ -900,7 +935,7 @@ function HomeContent() {
                           </td>
                           <td className="px-3 py-2.5">
                             <span className={`font-medium ${s.isUs ? 'text-yellow-300' : 'text-zinc-200'}`}>
-                              {s.isUs ? '★ ' : ''}{s.teamName}
+                              {s.teamName}
                             </span>
                           </td>
                           <td className="px-3 py-2.5 text-right hidden sm:table-cell">

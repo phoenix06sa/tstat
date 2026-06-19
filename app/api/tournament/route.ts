@@ -65,6 +65,10 @@ export async function GET(req: Request) {
     const ourPools: { pool: any; day: string }[] = [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let ourTeamInfo: any = null;
+    // A single pool round can be listed on more than one day's plays (e.g. a
+    // pool whose matches span two days). Dedup by pool identity so the same
+    // pool isn't collected twice — genuine re-pool rounds keep distinct names.
+    const seenPoolKeys = new Set<string>();
 
     for (const dayData of allDaysPlays) {
       const pools = dayData.plays.filter((p: { PlayType: number }) => p.PlayType === 0);
@@ -73,7 +77,11 @@ export async function GET(req: Request) {
           return t.TeamCode?.toLowerCase() === teamCode.toLowerCase() || String(t.TeamId) === teamCode;
         });
         if (found) {
-          ourPools.push({ pool, day: dayData.date });
+          const poolKey = pool.CompleteFullName || pool.FullName || '';
+          if (!seenPoolKeys.has(poolKey)) {
+            seenPoolKeys.add(poolKey);
+            ourPools.push({ pool, day: dayData.date });
+          }
           if (!ourTeamInfo) ourTeamInfo = found;
         }
       }
