@@ -17,3 +17,6 @@ tsconfig.tsbuildinfo
 
 # claude code local settings
 .claude/settings.local.json
+
+# Local Netlify folder
+.netlify
