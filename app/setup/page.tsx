@@ -11,6 +11,7 @@ interface EventResult {
   startDate: string; endDate: string; location: string; isPast: boolean;
 }
 interface DivisionOption { id: string; name: string }
+interface CrossDivisionTeam extends TeamOption { divisionId: string; divisionName: string }
 
 // "Jun 13–14, 2026" / "Jun 13, 2026" from two ISO dates
 function fmtRange(start: string, end: string): string {
@@ -43,6 +44,13 @@ export default function SetupPage() {
 
   // Division state
   const [divisions, setDivisions] = useState<DivisionOption[]>([]);
+
+  // "Search by team across all divisions" state (for when you don't know which
+  // division a team is in — e.g. tracking a friend's team)
+  const [teamSearchMode, setTeamSearchMode] = useState(false);
+  const [allTeams, setAllTeams] = useState<CrossDivisionTeam[]>([]);
+  const [loadingAllTeams, setLoadingAllTeams] = useState(false);
+  const [teamQuery, setTeamQuery] = useState('');
 
   // Load existing config (so the URL field is prefilled if reconfiguring)
   useEffect(() => {
@@ -127,12 +135,46 @@ export default function SetupPage() {
     loadTeams(parsed.eventId, parsed.divisionId);
   };
 
+  // Load every team across all divisions for the chosen event, so a team can
+  // be found by name without knowing its division first.
+  const enterTeamSearch = async () => {
+    setTeamSearchMode(true);
+    setError('');
+    if (allTeams.length > 0) return; // already loaded for this event
+    setLoadingAllTeams(true);
+    try {
+      const res = await fetch(`/api/event-teams?event=${eventId}`);
+      const json = await res.json();
+      if (json.error) throw new Error(json.error);
+      setAllTeams(json.teams || []);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoadingAllTeams(false);
+    }
+  };
+
+  // Pick a team from the cross-division search: lock in its division and team,
+  // then go to the confirm/team step with that division's teams loaded.
+  const pickTeamAcrossDivisions = (t: CrossDivisionTeam) => {
+    setTeams(allTeams.filter(x => x.divisionId === t.divisionId));
+    setDivisionId(t.divisionId);
+    setSelectedTeam(t.teamCode);
+    setTeamSearchMode(false);
+    setError('');
+    setStep('team');
+  };
+
   // From a search result: load the event's divisions, then pick one
   const pickEvent = async (ev: EventResult) => {
     setEventId(ev.eventId);
     setEventName(ev.name);
     setDivisionId('');
     setError('');
+    // New event — drop any cross-division teams cached for the previous one
+    setAllTeams([]);
+    setTeamSearchMode(false);
+    setTeamQuery('');
     setLoading(true);
     try {
       const res = await fetch(`/api/event-info?event=${ev.eventId}`);
@@ -276,34 +318,108 @@ export default function SetupPage() {
                 <div className="text-xs">{divisions.length} divisions</div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-2">Division</label>
-                <select
-                  value={divisionId}
-                  onChange={e => setDivisionId(e.target.value)}
-                  className="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 text-sm rounded-lg px-4 py-3 focus:outline-none focus:border-yellow-500"
-                >
-                  <option value="">-- Select a division --</option>
-                  {divisions.map(d => (
-                    <option key={d.id} value={d.id}>{d.name}</option>
-                  ))}
-                </select>
-              </div>
+              {!teamSearchMode ? (
+                <>
+                  {/* Option 1: pick the division, then the team (original flow) */}
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-300 mb-2">Division</label>
+                    <select
+                      value={divisionId}
+                      onChange={e => setDivisionId(e.target.value)}
+                      className="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 text-sm rounded-lg px-4 py-3 focus:outline-none focus:border-yellow-500"
+                    >
+                      <option value="">-- Select a division --</option>
+                      {divisions.map(d => (
+                        <option key={d.id} value={d.id}>{d.name}</option>
+                      ))}
+                    </select>
+                  </div>
 
-              {error && (
-                <div className="bg-red-950 border border-red-800 rounded-lg p-3 text-red-300 text-sm">{error}</div>
+                  {error && (
+                    <div className="bg-red-950 border border-red-800 rounded-lg p-3 text-red-300 text-sm">{error}</div>
+                  )}
+
+                  <button
+                    onClick={() => divisionId && loadTeams(eventId, divisionId)}
+                    disabled={loading || !divisionId}
+                    className="w-full bg-yellow-600 hover:bg-yellow-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white font-medium py-3 rounded-lg transition-colors"
+                  >
+                    {loading ? 'Loading teams…' : 'Continue'}
+                  </button>
+
+                  {/* Option 2: don't know the division? search by team name */}
+                  <div className="pt-2 border-t border-zinc-800">
+                    <button
+                      onClick={enterTeamSearch}
+                      className="text-zinc-400 hover:text-zinc-200 text-sm"
+                    >
+                      Don&apos;t know the division? Search by team name →
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Team search across every division in the event */}
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-300 mb-2">Search team name</label>
+                    <input
+                      type="text"
+                      value={teamQuery}
+                      onChange={e => setTeamQuery(e.target.value)}
+                      placeholder="e.g. CTX Juniors 12 Mizuno"
+                      autoFocus
+                      className="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 text-sm rounded-lg px-4 py-3 focus:outline-none focus:border-yellow-500 placeholder-zinc-500"
+                    />
+                    <p className="text-xs text-zinc-500 mt-1">
+                      Searches all {divisions.length} divisions — its division is picked for you.
+                    </p>
+                  </div>
+
+                  {error && (
+                    <div className="bg-red-950 border border-red-800 rounded-lg p-3 text-red-300 text-sm">{error}</div>
+                  )}
+
+                  {loadingAllTeams ? (
+                    <div className="text-zinc-500 text-sm py-2 text-center">
+                      Loading teams across {divisions.length} divisions…
+                    </div>
+                  ) : teamQuery.trim().length >= 2 && (() => {
+                    const q = teamQuery.trim().toLowerCase();
+                    const matches = allTeams
+                      .filter(t => t.teamName.toLowerCase().includes(q) || (t.club || '').toLowerCase().includes(q))
+                      .slice(0, 40);
+                    if (matches.length === 0) {
+                      return <div className="text-zinc-500 text-sm py-2 text-center">No teams match “{teamQuery.trim()}”</div>;
+                    }
+                    return (
+                      <div className="space-y-2 max-h-80 overflow-y-auto">
+                        {matches.map(t => (
+                          <button
+                            key={`${t.divisionId}-${t.teamCode}`}
+                            onClick={() => pickTeamAcrossDivisions(t)}
+                            className="w-full text-left bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg px-4 py-3 transition-colors"
+                          >
+                            <div className="text-sm font-medium text-zinc-100">{t.teamName}</div>
+                            <div className="text-xs text-zinc-400 mt-0.5">{t.divisionName} · {t.teamCode}</div>
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()}
+
+                  <div className="pt-2 border-t border-zinc-800">
+                    <button
+                      onClick={() => { setTeamSearchMode(false); setError(''); }}
+                      className="text-zinc-400 hover:text-zinc-200 text-sm"
+                    >
+                      ← Pick a division from the list instead
+                    </button>
+                  </div>
+                </>
               )}
 
               <button
-                onClick={() => divisionId && loadTeams(eventId, divisionId)}
-                disabled={loading || !divisionId}
-                className="w-full bg-yellow-600 hover:bg-yellow-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white font-medium py-3 rounded-lg transition-colors"
-              >
-                {loading ? 'Loading teams…' : 'Continue'}
-              </button>
-
-              <button
-                onClick={() => { setStep('event'); setError(''); }}
+                onClick={() => { setStep('event'); setTeamSearchMode(false); setError(''); }}
                 className="w-full text-zinc-400 hover:text-zinc-200 text-sm py-2"
               >
                 ← Back to search
