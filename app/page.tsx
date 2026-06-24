@@ -35,6 +35,7 @@ interface BracketCard {
   bracketName: string; finishRange: string; bracketDate: string; time: string;
   teamCount: number; bracketRounds: BracketRound[];
   relation: 'direct' | 'chained' | 'other'; detail: string; sortKey: number;
+  confirmed: boolean;
 }
 interface ActiveBracketMatch {
   matchId: number; matchName: string; time: string; court: string;
@@ -749,7 +750,11 @@ function HomeContent() {
             {data.bracketCards.length > 0 && (
               <div>
                 <div className="text-xs text-zinc-400 uppercase tracking-widest mb-1 px-1">Bracket Play</div>
-                <div className="text-xs text-zinc-500 mb-3 px-1">Our path highlighted · all divisions by finish</div>
+                <div className="text-xs text-zinc-500 mb-3 px-1">
+                  {data.bracketCards.some(c => c.confirmed)
+                    ? 'Your bracket highlighted · all divisions by finish'
+                    : 'Predicted landing spots highlighted · all divisions by finish'}
+                </div>
                 <div className="space-y-4">
                   {(() => {
                     // Our bracket always renders the live scored view; other
@@ -760,7 +765,7 @@ function HomeContent() {
                       const otherView = !ourActive ? (data.activeBrackets?.[bracketName] || null) : null;
                       return ourActive || (otherView?.populated ? otherView : null);
                     };
-                    const renderBody = (bracketName: string, rounds: BracketRound[]) => {
+                    const renderBody = (bracketName: string, rounds: BracketRound[], highlightUs: boolean) => {
                       const view = viewFor(bracketName);
                       if (view) {
                         return (
@@ -799,13 +804,19 @@ function HomeContent() {
                                   <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">{round.label}</span>
                                 </div>
                                 <div className="px-4 py-2 space-y-1.5">
-                                  {round.matches.map((m: BracketRoundMatch, mi: number) => (
-                                    <div key={mi} className={`flex items-center text-xs px-2 py-1.5 rounded ${m.hasUs ? 'bg-yellow-950/40 border border-yellow-800/50' : 'bg-zinc-800/30'}`}>
-                                      <span className={`flex-1 truncate ${m.hasUs ? 'text-yellow-300 font-semibold' : 'text-zinc-300'}`}>{m.team1}</span>
-                                      <span className="text-zinc-500 mx-2 shrink-0">vs</span>
-                                      <span className={`flex-1 text-right truncate ${m.hasUs ? 'text-yellow-300 font-semibold' : 'text-zinc-300'}`}>{m.team2}</span>
-                                    </div>
-                                  ))}
+                                  {round.matches.map((m: BracketRoundMatch, mi: number) => {
+                                    // Only flag our slot when this bracket is still
+                                    // a live landing spot. In brackets we've been
+                                    // ruled out of, our pool ref shouldn't light up.
+                                    const us = highlightUs && m.hasUs;
+                                    return (
+                                      <div key={mi} className={`flex items-center text-xs px-2 py-1.5 rounded ${us ? 'bg-yellow-950/40 border border-yellow-800/50' : 'bg-zinc-800/30'}`}>
+                                        <span className={`flex-1 truncate ${us ? 'text-yellow-300 font-semibold' : 'text-zinc-300'}`}>{m.team1}</span>
+                                        <span className="text-zinc-500 mx-2 shrink-0">vs</span>
+                                        <span className={`flex-1 text-right truncate ${us ? 'text-yellow-300 font-semibold' : 'text-zinc-300'}`}>{m.team2}</span>
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               </div>
                             ))}
@@ -815,21 +826,57 @@ function HomeContent() {
                       return null;
                     };
 
+                    // Once any bracket is confirmed as our landing spot, we know
+                    // where we're playing — so stop coloring the brackets we could
+                    // have landed in but didn't. The bracket we're actually in
+                    // (activeBracket) is ground truth even when the pool→bracket
+                    // prediction never mapped our finish to it — multi-stage
+                    // Challenge/Division formats land us somewhere via win/lose
+                    // feeds, not a direct pool ref.
+                    const activeName = data.activeBracket?.bracketName;
+                    const placementKnown = !!activeName || data.bracketCards.some(c => c.confirmed);
                     return (
                       <>
                         {data.bracketCards.map((c) => {
-                          const ours = c.relation !== 'other';
+                          const played = activeName === c.bracketName;
+                          const confirmed = c.confirmed || played;
+                          const onPath = c.relation !== 'other' || played;
+                          // Color a bracket when it's on our path AND either we
+                          // don't yet know our finish (so it's a live prediction)
+                          // or it's our confirmed landing spot. Ruled-out brackets
+                          // go back to gray.
+                          const highlight = onPath && (!placementKnown || confirmed);
+                          // Highlighted, but our finish isn't locked yet: we could
+                          // land here, we don't know that we will.
+                          const predicted = highlight && !confirmed;
                           const startTime = viewFor(c.bracketName)?.startTime || c.time;
                           // Show every bracket's tree (predicted who-plays-who now,
                           // live scored once teams are slotted) — on path or not
                           const rounds = c.bracketRounds;
                           return (
-                            <div key={c.bracketName} className={`bg-zinc-900 rounded-xl border overflow-hidden ${ours ? 'border-yellow-700' : 'border-zinc-700'}`}>
+                            <div key={c.bracketName} className={`bg-zinc-900 rounded-xl border overflow-hidden ${highlight ? 'border-yellow-700' : 'border-zinc-700'}`}>
                               <div className="px-4 pt-4 pb-3">
+                                {predicted && (
+                                  <div className="mb-2">
+                                    <span className="inline-flex items-center gap-1.5 rounded-md bg-yellow-900/40 border border-yellow-700/60 px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-yellow-300">
+                                      ◆ Prediction · you could land here
+                                    </span>
+                                    <div className="mt-1 text-xs text-yellow-600/90">
+                                      Highlighted because a pool finish leads here. Matchups (e.g. “Winner of Match 1”) lock in as games finish.
+                                    </div>
+                                  </div>
+                                )}
+                                {highlight && confirmed && (
+                                  <div className="mb-2">
+                                    <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-900/40 border border-emerald-700/60 px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-emerald-300">
+                                      ★ Your bracket
+                                    </span>
+                                  </div>
+                                )}
                                 <div className="flex items-center justify-between mb-1 gap-2">
-                                  <div className={`font-semibold text-base ${ours ? 'text-white' : 'text-zinc-300'}`}>{c.bracketName}</div>
+                                  <div className={`font-semibold text-base ${highlight ? 'text-white' : 'text-zinc-300'}`}>{c.bracketName}</div>
                                   {c.finishRange && (
-                                    <div className={`text-xs font-semibold shrink-0 ${ours ? 'text-emerald-400' : 'text-zinc-500'}`}>{c.finishRange}</div>
+                                    <div className={`text-xs font-semibold shrink-0 ${highlight ? 'text-emerald-400' : 'text-zinc-500'}`}>{c.finishRange}</div>
                                   )}
                                 </div>
                                 <div className="text-zinc-500 text-xs">
@@ -841,7 +888,7 @@ function HomeContent() {
                                   <div className="mt-2 text-xs text-zinc-300">{c.detail}</div>
                                 )}
                               </div>
-                              {renderBody(c.bracketName, rounds)}
+                              {renderBody(c.bracketName, rounds, highlight)}
                             </div>
                           );
                         })}

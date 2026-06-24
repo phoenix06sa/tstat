@@ -219,6 +219,9 @@ export interface BracketCard {
   relation: 'direct' | 'chained' | 'other';
   detail: string;          // "Our pool → 3rd in Pool" / "Reached by → Win Challenge 4" / ''
   sortKey: number;         // intermediates first, then divisions by best finish rank
+  confirmed: boolean;      // pool play decided AND this is our actual landing spot
+                           // (or onward from it). Until true, on-path brackets are
+                           // predictions: any of several we *could* land in.
 }
 
 export interface BracketPathsInput {
@@ -529,6 +532,10 @@ export function buildBracketPaths(input: BracketPathsInput): {
 
   // Build future paths for each pool rank (1st through last)
   const futurePaths: FuturePath[] = [];
+  // Once pool play is decided, the bracket our actual finish leads into. Stays
+  // null while finishes are still TBD, which keeps every on-path bracket flagged
+  // as a prediction instead of a confirmed landing spot.
+  let ourConfirmedBracket: string | null = null;
   const poolSize = rawTeams.length;
   for (let poolRank = 1; poolRank <= poolSize; poolRank++) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -550,6 +557,9 @@ export function buildBracketPaths(input: BracketPathsInput): {
       const teamText = teamAtRank.TeamText || teamAtRank.TeamName || '';
       bracketInfo = findBracketForTeam(teamText, teamAtRank.TeamName);
     }
+
+    // Lock in our landing spot once our own pool finish is decided.
+    if (isUs && poolPlayComplete && bracketInfo) ourConfirmedBracket = bracketInfo.bracketName;
 
     // No bracket for this finish yet? Fall back to a re-pool destination —
     // i.e. the next pool round this finish feeds into.
@@ -698,6 +708,24 @@ export function buildBracketPaths(input: BracketPathsInput): {
   const chainedByName = new Map(chainedPaths.map(c => [c.bracketName, c]));
   const intermediateOrder = futurePaths.map(f => f.nextPlay);
 
+  // Brackets we're actually locked into once pool play is decided: our landing
+  // bracket plus every bracket reachable onward from it (win/lose feeds). Empty
+  // until our finish is known, so on-path brackets stay predictions till then.
+  const confirmedSet = new Set<string>();
+  if (ourConfirmedBracket) {
+    confirmedSet.add(ourConfirmedBracket);
+    const queue = [ourConfirmedBracket];
+    while (queue.length) {
+      const cur = queue.shift()!;
+      const adv = advances[cur];
+      if (!adv) continue;
+      for (const outcome of ['Winner', 'Loser'] as const) {
+        const dest = adv[outcome];
+        if (dest && !confirmedSet.has(dest)) { confirmedSet.add(dest); queue.push(dest); }
+      }
+    }
+  }
+
   const bracketCards: BracketCard[] = [];
   for (const name of Object.keys(bracketTrees)) {
     const tree = bracketTrees[name];
@@ -715,6 +743,7 @@ export function buildBracketPaths(input: BracketPathsInput): {
         finishRange: `${ordinal(range.best)} – ${ordinal(range.worst)} overall`,
         bracketDate: tree.date, time: tree.startTime, teamCount: tree.teamCount,
         bracketRounds: tree.rounds, relation, detail, sortKey: 1000 + range.best,
+        confirmed: confirmedSet.has(name),
       });
     } else if (relation !== 'other') {
       // Team's intermediate bracket (Challenge/Crossover) — no final rank yet;
@@ -724,6 +753,7 @@ export function buildBracketPaths(input: BracketPathsInput): {
         bracketName: name, finishRange: '',
         bracketDate: tree.date, time: tree.startTime, teamCount: tree.teamCount,
         bracketRounds: tree.rounds, relation, detail, sortKey: idx >= 0 ? idx : 500,
+        confirmed: confirmedSet.has(name),
       });
     }
   }
