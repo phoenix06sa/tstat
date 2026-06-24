@@ -200,6 +200,7 @@ export async function GET(req: Request) {
       finalStandings,
       totalTeams,
       eventComplete,
+      buildId: process.env.NEXT_PUBLIC_BUILD_ID || '',
       debug: {
         eventDates,
         daysWithData: allDaysPlays.map(d => d.date),

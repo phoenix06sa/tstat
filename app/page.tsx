@@ -84,6 +84,7 @@ interface TournamentData {
   finalStandings: { overallRank: number; tied: boolean; teamName: string; bracket: string; bracketRank: number; isUs: boolean }[];
   totalTeams: number;
   eventComplete: boolean;
+  buildId?: string;
 }
 interface TeamOption {
   teamId: string; teamName: string; teamCode: string; club: string; pool: string;
@@ -274,6 +275,23 @@ function HomeContent() {
       }
       const json = await res.json();
       if (json.error) throw new Error(json.error);
+
+      // Auto-update: this API is polled every 90s, so use it to notice when a
+      // newer deploy is live. The running client was built with one BUILD_ID
+      // (baked into its bundle); the server returns the *current* deploy's id.
+      // If they differ, a cached shell is stale — reload to pull fresh code.
+      // A home-screen "refresh" only re-fetches data, never the shell, so this
+      // is what actually gets new code onto bookmarked/installed copies.
+      // sessionStorage guards against a reload loop if the shell stays cached.
+      const runningBuild = process.env.NEXT_PUBLIC_BUILD_ID;
+      const liveBuild: string | undefined = json.buildId;
+      if (runningBuild && liveBuild && runningBuild !== liveBuild &&
+          sessionStorage.getItem('reloadedForBuild') !== liveBuild) {
+        sessionStorage.setItem('reloadedForBuild', liveBuild);
+        window.location.reload();
+        return;
+      }
+
       setData(json);
       setLastRefresh(new Date().toISOString());
     } catch (e) {
