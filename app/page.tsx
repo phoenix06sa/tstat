@@ -764,17 +764,10 @@ function HomeContent() {
               );
             })()}
 
-            {/* Bracket Play — every division in finish-rank order; our path highlighted */}
-            {data.bracketCards.length > 0 && (
-              <div>
-                <div className="text-xs text-zinc-400 uppercase tracking-widest mb-1 px-1">Bracket Play</div>
-                <div className="text-xs text-zinc-500 mb-3 px-1">
-                  {data.bracketCards.some(c => c.confirmed)
-                    ? 'Your bracket highlighted · all divisions by finish'
-                    : 'Predicted landing spots highlighted · all divisions by finish'}
-                </div>
-                <div className="space-y-4">
-                  {(() => {
+            {/* Challenge Rounds + Bracket Play. Challenge/crossover brackets are
+                stepping stones that decide which division you land in (no final
+                finish rank), so they get their own section above the divisions. */}
+            {data.bracketCards.length > 0 && (() => {
                     // Our bracket always renders the live scored view; other
                     // brackets switch from the static who-plays-who tree to the
                     // scored view once their teams are slotted.
@@ -853,9 +846,7 @@ function HomeContent() {
                     // feeds, not a direct pool ref.
                     const activeName = data.activeBracket?.bracketName;
                     const placementKnown = !!activeName || data.bracketCards.some(c => c.confirmed);
-                    return (
-                      <>
-                        {data.bracketCards.map((c) => {
+                    const renderCard = (c: BracketCard) => {
                           const played = activeName === c.bracketName;
                           const confirmed = c.confirmed || played;
                           const onPath = c.relation !== 'other' || played;
@@ -909,13 +900,44 @@ function HomeContent() {
                               {renderBody(c.bracketName, rounds, highlight)}
                             </div>
                           );
-                        })}
+                    };
+
+                    // Challenge/crossover brackets carry no final finish range —
+                    // they're stepping stones that decide which division you land
+                    // in, so they go in their own section above the divisions.
+                    const challengeCards = data.bracketCards.filter(c => !c.finishRange);
+                    const divisionCards = data.bracketCards.filter(c => c.finishRange);
+                    // Label the section after whatever the event names them:
+                    // "Challenge 4" → "Challenge Rounds", "Crossover 1" → "Crossover Rounds".
+                    const challengeWord = challengeCards[0]?.bracketName.match(/^([A-Za-z]+)/)?.[1] || 'Challenge';
+
+                    return (
+                      <>
+                        {challengeCards.length > 0 && (
+                          <div>
+                            <div className="text-xs text-zinc-400 uppercase tracking-widest mb-1 px-1">{challengeWord} Rounds</div>
+                            <div className="text-xs text-zinc-500 mb-3 px-1">Stepping-stone brackets · win or lose here to set which division you play</div>
+                            <div className="space-y-4">
+                              {challengeCards.map(renderCard)}
+                            </div>
+                          </div>
+                        )}
+                        {divisionCards.length > 0 && (
+                          <div>
+                            <div className="text-xs text-zinc-400 uppercase tracking-widest mb-1 px-1">Bracket Play</div>
+                            <div className="text-xs text-zinc-500 mb-3 px-1">
+                              {placementKnown
+                                ? 'Your bracket highlighted · all divisions by finish'
+                                : 'Predicted landing spots highlighted · all divisions by finish'}
+                            </div>
+                            <div className="space-y-4">
+                              {divisionCards.map(renderCard)}
+                            </div>
+                          </div>
+                        )}
                       </>
                     );
                   })()}
-                </div>
-              </div>
-            )}
 
             {/* Fallback: scored bracket view when our bracket isn't among the Bracket Play cards */}
             {data.activeBracket && !data.bracketCards.some(c => c.bracketName === data.activeBracket!.bracketName) && (
