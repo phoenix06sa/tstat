@@ -147,7 +147,6 @@ export function buildFinalStandings(finalDay: DayPlays | undefined, teamName: st
   // Step 1: Parse all bracket entries
   type ParsedEntry = { bracketRank: number; bracketPlace: number; teamName: string; explicitOverallRank: number | null; bracketName: string; tier: string };
   const allParsedEntries: ParsedEntry[] = [];
-  let hasAnyExplicitRanks = false;
 
   const seenTeams = new Set<string>();
   for (const play of finalPlays) {
@@ -175,7 +174,6 @@ export function buildFinalStandings(finalDay: DayPlays | undefined, teamName: st
       const overallMatch = teamNameRaw.match(/\((\d+)\)\s*$/);
       const explicitOverallRank = overallMatch ? parseInt(overallMatch[1]) : null;
       if (overallMatch) teamNameRaw = teamNameRaw.replace(/\s*\(\d+\)\s*$/, '');
-      if (explicitOverallRank !== null) hasAnyExplicitRanks = true;
       // Strip location code
       const entryTeamName = stripLocationCode(teamNameRaw);
       // Skip placeholder entries (unplayed tournament)
@@ -188,7 +186,36 @@ export function buildFinalStandings(finalDay: DayPlays | undefined, teamName: st
   const isUsEntry = (entry: ParsedEntry) =>
     entry.teamName === teamName || stripLocationCode(entry.teamName).toLowerCase() === teamName.toLowerCase();
 
-  if (hasAnyExplicitRanks) {
+  // The trailing "(N)" after a team is an explicit OVERALL rank in some events
+  // (e.g. Lone Star Regionals), but a SEED in others (USAV JNCs). Tell them
+  // apart by finish-consistency: a true overall rank improves (gets smaller)
+  // as the bracket finish improves, so within a bracket it never runs backwards
+  // against bracket order. If any bracket's numbers decrease as finish worsens,
+  // they're seeds — ignore them and fall back to elimination-tier ranking, which
+  // correctly ties sibling-bracket winners (Silver A 1st = Silver B 1st = 9th).
+  const byBracketName = new Map<string, ParsedEntry[]>();
+  for (const e of allParsedEntries) {
+    if (!byBracketName.has(e.bracketName)) byBracketName.set(e.bracketName, []);
+    byBracketName.get(e.bracketName)!.push(e);
+  }
+  let anyExplicit = false;
+  let explicitFinishConsistent = true;
+  for (const entries of byBracketName.values()) {
+    const withRank = entries
+      .filter(e => e.explicitOverallRank !== null)
+      .sort((a, b) => a.bracketRank - b.bracketRank);
+    if (withRank.length === 0) continue;
+    anyExplicit = true;
+    for (let i = 1; i < withRank.length; i++) {
+      if ((withRank[i].explicitOverallRank as number) < (withRank[i - 1].explicitOverallRank as number)) {
+        explicitFinishConsistent = false;
+        break;
+      }
+    }
+  }
+  const useExplicitRanks = anyExplicit && explicitFinishConsistent;
+
+  if (useExplicitRanks) {
     // Tournament provides explicit overall ranks (e.g. Lone Star Regionals)
     for (const entry of allParsedEntries) {
       finalStandings.push({
