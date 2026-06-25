@@ -648,10 +648,10 @@ function HomeContent() {
         {/* Hub — four boxes that lead to each feature */}
         {view === 'hub' && (() => {
           const upcomingWork = data?.workAssignments.length || 0;
-          const tiles: { target: View | null; emoji: string; title: string; desc: string; badge?: string }[] = [
+          const tiles: { target: View | null; emoji: string; title: string; desc: string; badge?: string; beta?: boolean }[] = [
             { target: 'tracker', emoji: '🏐', title: 'Live Tracker', desc: 'Your team: matches & bracket path' },
             { target: 'pools', emoji: '🏟️', title: 'Division Pool Play', desc: 'Everyone’s pools & standings' },
-            { target: 'courts', emoji: '📍', title: 'Court Play', desc: 'Find teams by floor' },
+            { target: 'courts', emoji: '📍', title: 'Court Play', desc: 'Find teams by floor', beta: true },
             { target: 'work', emoji: '🧹', title: 'Work Schedule', desc: 'When & where your team reffs', badge: upcomingWork ? `${upcomingWork} upcoming` : undefined },
             { target: 'seeds', emoji: '🔢', title: 'Starting Seeds', desc: 'Pre-tournament overall ranking' },
             { target: 'standings', emoji: '🏆', title: 'Final Standings', desc: data?.eventComplete ? 'Final results are in' : 'Posts at end of tournament' },
@@ -666,7 +666,12 @@ function HomeContent() {
                   className={`text-left bg-zinc-900 rounded-xl border border-zinc-700 p-4 min-h-32 flex flex-col transition-colors ${t.target ? 'hover:bg-zinc-800 hover:border-zinc-600' : 'opacity-50 cursor-default'}`}
                 >
                   <div className="text-3xl mb-2">{t.emoji}</div>
-                  <div className="font-semibold text-white text-sm">{t.title}</div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="font-semibold text-white text-sm">{t.title}</div>
+                    {t.beta && (
+                      <span className="text-[10px] font-bold uppercase tracking-wide text-amber-300 bg-amber-900/40 border border-amber-700/50 rounded px-1 py-0.5 leading-none">Beta</span>
+                    )}
+                  </div>
                   <div className="text-zinc-400 text-xs mt-0.5 flex-1">{t.desc}</div>
                   {t.badge && (
                     <div className="mt-2 self-start inline-block text-[11px] font-semibold text-yellow-300 bg-yellow-900/40 border border-yellow-800/50 rounded px-1.5 py-0.5">
