@@ -140,6 +140,29 @@ interface SavedTournament {
   addedAt: number;
 }
 
+// Hub is the landing screen; the others are the features it links to.
+type View = 'hub' | 'tracker' | 'work' | 'standings' | 'pools' | 'seeds' | 'courts';
+
+// Division-wide data (team-agnostic) from /api/division
+interface DivisionPoolStanding {
+  teamName: string; teamCode: string;
+  matchesWon: number; matchesLost: number; setsWon: number; setsLost: number;
+  finishRank: number | null; finishRankText: string;
+}
+interface DivisionPool {
+  name: string; courts: string[]; date: string; order: number;
+  complete: boolean; standings: DivisionPoolStanding[];
+}
+interface DivisionSeed { seed: number; teamName: string; teamCode: string; club: string }
+interface DivisionCourt {
+  name: string;
+  entries: { poolName: string; date: string; complete: boolean; teams: { teamName: string; teamCode: string }[] }[];
+}
+interface DivisionData {
+  event: string; poolPlayComplete: boolean;
+  pools: DivisionPool[]; seeds: DivisionSeed[]; courts: DivisionCourt[];
+}
+
 export default function Home() {
   return (
     <Suspense fallback={<div className="min-h-screen bg-zinc-950 flex items-center justify-center text-zinc-400">Loading…</div>}>
@@ -165,6 +188,12 @@ function HomeContent() {
   // redirecting an un-setup visitor to /setup) we render a neutral splash
   // instead of flashing the half-loaded tracker.
   const [ready, setReady] = useState(false);
+  // Which screen of the app is showing: the hub or one feature.
+  const [view, setView] = useState<View>('hub');
+  // Division-wide data for the pools/seeds/courts views (lazy-loaded)
+  const [divisionData, setDivisionData] = useState<DivisionData | null>(null);
+  const [divisionLoading, setDivisionLoading] = useState(false);
+  const [selectedCourt, setSelectedCourt] = useState<string | null>(null);
 
   // Load saved tournaments list from localStorage
   useEffect(() => {
@@ -303,6 +332,34 @@ function HomeContent() {
 
   useEffect(() => { if (selectedTeam && config) fetchData(selectedTeam); }, [fetchData, selectedTeam, config]);
 
+  // Division-wide data (everyone's pools, seeds, courts) — independent of the
+  // selected team, so it's fetched lazily the first time a division view opens.
+  const fetchDivision = useCallback(async () => {
+    if (!config) return;
+    setDivisionLoading(true);
+    try {
+      const res = await fetch(`/api/division?event=${config.eventId}&division=${config.divisionId}&t=${Date.now()}`);
+      const json = await res.json();
+      if (!json.error) setDivisionData(json);
+    } catch { /* ignore */ } finally {
+      setDivisionLoading(false);
+    }
+  }, [config]);
+
+  const onDivisionView = view === 'pools' || view === 'seeds' || view === 'courts';
+  // Load once when a division view first opens…
+  useEffect(() => {
+    if (onDivisionView && config && !divisionData && !divisionLoading) fetchDivision();
+  }, [onDivisionView, config, divisionData, divisionLoading, fetchDivision]);
+  // …and keep it fresh on a 90s tick while one is open.
+  useEffect(() => {
+    if (!onDivisionView || !config) return;
+    const id = setInterval(() => fetchDivision(), 90_000);
+    return () => clearInterval(id);
+  }, [onDivisionView, config, fetchDivision]);
+  // Court drill-down is per-visit; reset it when leaving the courts view.
+  useEffect(() => { if (view !== 'courts') setSelectedCourt(null); }, [view]);
+
   // Auto-refresh every 90 seconds
   useEffect(() => {
     if (!selectedTeam || !config) return;
@@ -345,6 +402,27 @@ function HomeContent() {
     router.push('/setup');
   }
 
+  // Open a feature from the hub. Push a history entry so the device/browser
+  // back button (and the in-app "Home" button) returns to the hub naturally.
+  function openView(v: View) {
+    setView(v);
+    window.history.pushState({ trackerView: v }, '');
+  }
+  function backToHub() {
+    // Pop the pushed entry; the popstate handler restores the hub view.
+    window.history.back();
+  }
+
+  // Keep the view in sync with browser history so back/forward works.
+  useEffect(() => {
+    const onPop = () => {
+      const s = window.history.state as { trackerView?: View } | null;
+      setView(s?.trackerView ?? 'hub');
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
   function switchTournament(t: SavedTournament) {
     localStorage.setItem('tracker_eventId', t.eventId);
     localStorage.setItem('tracker_divisionId', t.divisionId);
@@ -353,6 +431,7 @@ function HomeContent() {
     setConfig({ eventId: t.eventId, divisionId: t.divisionId, eventName: t.eventName || '' });
     setSelectedTeam(t.teamCode);
     setData(null);
+    setDivisionData(null); // division-wide data is event/division specific
     setShowTournamentSwitcher(false);
   }
 
@@ -566,13 +645,57 @@ function HomeContent() {
           <div className="bg-red-950 border border-red-800 rounded-xl p-4 text-red-300 text-sm">{error}</div>
         )}
 
-        {loading && !data && (
+        {/* Hub — four boxes that lead to each feature */}
+        {view === 'hub' && (() => {
+          const upcomingWork = data?.workAssignments.length || 0;
+          const tiles: { target: View | null; emoji: string; title: string; desc: string; badge?: string }[] = [
+            { target: 'tracker', emoji: '🏐', title: 'Live Tracker', desc: 'Your team: matches & bracket path' },
+            { target: 'pools', emoji: '🏟️', title: 'Division Pool Play', desc: 'Everyone’s pools & standings' },
+            { target: 'courts', emoji: '📍', title: 'Court Play', desc: 'Find teams by floor' },
+            { target: 'work', emoji: '🧹', title: 'Work Schedule', desc: 'When & where your team reffs', badge: upcomingWork ? `${upcomingWork} upcoming` : undefined },
+            { target: 'seeds', emoji: '🔢', title: 'Starting Seeds', desc: 'Pre-tournament overall ranking' },
+            { target: 'standings', emoji: '🏆', title: 'Final Standings', desc: data?.eventComplete ? 'Final results are in' : 'Posts at end of tournament' },
+          ];
+          return (
+            <div className="grid grid-cols-2 gap-3">
+              {tiles.map(t => (
+                <button
+                  key={t.title}
+                  onClick={() => t.target && openView(t.target)}
+                  disabled={!t.target}
+                  className={`text-left bg-zinc-900 rounded-xl border border-zinc-700 p-4 min-h-32 flex flex-col transition-colors ${t.target ? 'hover:bg-zinc-800 hover:border-zinc-600' : 'opacity-50 cursor-default'}`}
+                >
+                  <div className="text-3xl mb-2">{t.emoji}</div>
+                  <div className="font-semibold text-white text-sm">{t.title}</div>
+                  <div className="text-zinc-400 text-xs mt-0.5 flex-1">{t.desc}</div>
+                  {t.badge && (
+                    <div className="mt-2 self-start inline-block text-[11px] font-semibold text-yellow-300 bg-yellow-900/40 border border-yellow-800/50 rounded px-1.5 py-0.5">
+                      {t.badge}
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          );
+        })()}
+
+        {/* Back to the hub from any feature view */}
+        {view !== 'hub' && (
+          <button
+            onClick={backToHub}
+            className="text-zinc-400 hover:text-zinc-200 text-sm flex items-center gap-1"
+          >
+            ← Home
+          </button>
+        )}
+
+        {view !== 'hub' && loading && !data && (
           <div className="flex items-center justify-center py-20 text-zinc-400">
             Loading tournament data…
           </div>
         )}
 
-        {data && (
+        {view === 'tracker' && data && (
           <>
             {/* Each round: its pool standings, then that round's matches */}
             {(() => {
@@ -714,24 +837,6 @@ function HomeContent() {
                 </>
               );
             })()}
-
-            {/* Work assignments */}
-            {data.workAssignments.length > 0 && (
-              <div>
-                <div className="text-xs text-zinc-400 uppercase tracking-widest mb-3 px-1">Upcoming Work Assignments</div>
-                <div className="space-y-2">
-                  {data.workAssignments.map((w, i) => (
-                    <div key={i} className="bg-zinc-900 rounded-xl border border-zinc-700 px-4 py-3 flex items-center gap-4">
-                      <div className="text-zinc-400 font-mono text-sm font-semibold w-28">{w.date} {w.time}</div>
-                      <div>
-                        <div className="text-zinc-300 text-sm">{w.play}</div>
-                        <div className="text-zinc-500 text-xs">{w.court}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {/* Predicted Next Round — re-pool formats seed the next pool round
                 from this one; show where each finish leads before brackets seed */}
@@ -994,53 +1099,254 @@ function HomeContent() {
               </div>
             )}
 
-            {/* Final Standings — full 64-team list after all bracket play complete */}
-            {data.finalStandings && data.finalStandings.length > 0 && (
-              <div>
-                <div className="text-xs text-zinc-400 uppercase tracking-widest mb-3 px-1">Final Standings</div>
-                <div className="bg-zinc-900 rounded-xl border border-zinc-700 overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-zinc-400 text-xs border-b border-zinc-700">
-                        <th className="text-center px-3 py-2 w-10">Rank</th>
-                        <th className="text-left px-3 py-2">Team</th>
-                        <th className="text-right px-3 py-2 hidden sm:table-cell text-zinc-500">Bracket</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.finalStandings.map((s, i) => (
-                        <tr key={i} className={`border-b border-zinc-700 last:border-0 ${s.isUs ? 'bg-yellow-950/40' : ''}`}>
-                          <td className="text-center px-3 py-2.5">
-                            <span className={`text-xs font-bold font-mono ${
-                              s.overallRank === 1 ? 'text-yellow-400' :
-                              s.overallRank <= 3 ? 'text-zinc-300' :
-                              s.isUs ? 'text-yellow-500' :
-                              'text-zinc-400'
-                            }`}>
-                              {s.tied ? 'T-' : ''}{s.overallRank}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2.5">
-                            <span className={`font-medium ${s.isUs ? 'text-yellow-300' : 'text-zinc-200'}`}>
-                              {s.teamName}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2.5 text-right hidden sm:table-cell">
-                            <span className="text-zinc-500 text-xs">{s.bracket}</span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
             {/* Footer */}
             <div className="text-center text-zinc-500 text-xs pb-4 space-y-2">
               <div>{data.teamCode} · {data.division} · Auto-refreshes every 90s</div>
               <div>Built with Claude Code</div>
             </div>
+          </>
+        )}
+
+        {/* Work Schedule view */}
+        {view === 'work' && data && (
+          <div>
+            <div className="text-xs text-zinc-400 uppercase tracking-widest mb-3 px-1">Work Schedule</div>
+            {data.workAssignments.length > 0 ? (
+              <div className="space-y-2">
+                {data.workAssignments.map((w, i) => (
+                  <div key={i} className="bg-zinc-900 rounded-xl border border-zinc-700 px-4 py-3 flex items-center gap-4">
+                    <div className="text-zinc-400 font-mono text-sm font-semibold w-28">{w.date} {w.time}</div>
+                    <div>
+                      <div className="text-zinc-300 text-sm">{w.play}</div>
+                      <div className="text-zinc-500 text-xs">{w.court}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="bg-zinc-900 rounded-xl border border-zinc-700 p-6 text-center text-zinc-400 text-sm">
+                No work assignments scheduled right now.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Final Standings view — gated until the event is complete */}
+        {view === 'standings' && data && (
+          data.finalStandings && data.finalStandings.length > 0 ? (
+            <div>
+              <div className="text-xs text-zinc-400 uppercase tracking-widest mb-3 px-1">Final Standings</div>
+              <div className="bg-zinc-900 rounded-xl border border-zinc-700 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-zinc-400 text-xs border-b border-zinc-700">
+                      <th className="text-center px-3 py-2 w-10">Rank</th>
+                      <th className="text-left px-3 py-2">Team</th>
+                      <th className="text-right px-3 py-2 hidden sm:table-cell text-zinc-500">Bracket</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.finalStandings.map((s, i) => (
+                      <tr key={i} className={`border-b border-zinc-700 last:border-0 ${s.isUs ? 'bg-yellow-950/40' : ''}`}>
+                        <td className="text-center px-3 py-2.5">
+                          <span className={`text-xs font-bold font-mono ${
+                            s.overallRank === 1 ? 'text-yellow-400' :
+                            s.overallRank <= 3 ? 'text-zinc-300' :
+                            s.isUs ? 'text-yellow-500' :
+                            'text-zinc-400'
+                          }`}>
+                            {s.tied ? 'T-' : ''}{s.overallRank}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <span className={`font-medium ${s.isUs ? 'text-yellow-300' : 'text-zinc-200'}`}>
+                            {s.teamName}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-right hidden sm:table-cell">
+                          <span className="text-zinc-500 text-xs">{s.bracket}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-zinc-900 rounded-xl border border-zinc-700 p-8 text-center">
+              <div className="text-4xl mb-3">🏆</div>
+              <div className="text-white font-semibold mb-1">Final standings aren&apos;t in yet</div>
+              <div className="text-zinc-400 text-sm">Coming at the end of the tournament — overall placements post once bracket play wraps up.</div>
+            </div>
+          )
+        )}
+
+        {/* Division Pool Play view — everyone's pools across the division */}
+        {view === 'pools' && (
+          <>
+            {divisionLoading && !divisionData && (
+              <div className="flex items-center justify-center py-20 text-zinc-400">Loading division pools…</div>
+            )}
+            {divisionData && (
+              <div className="space-y-5">
+                {divisionData.poolPlayComplete && (
+                  <div className="bg-zinc-900 rounded-xl border border-emerald-800/60 p-5 text-center">
+                    <div className="text-3xl mb-2">✅</div>
+                    <div className="text-white font-semibold mb-1">Pool play is complete</div>
+                    <div className="text-zinc-400 text-sm">
+                      Head to <button onClick={() => openView('tracker')} className="text-yellow-400 underline">Live Tracker</button> and pick a team to follow bracket play.
+                    </div>
+                  </div>
+                )}
+                {(() => {
+                  // Group pools by round (everything before "Pool N")
+                  const groups: Record<string, DivisionPool[]> = {};
+                  const order: string[] = [];
+                  for (const p of divisionData.pools) {
+                    const g = p.name.replace(/\s*Pool\b.*$/i, '').trim() || 'Pools';
+                    if (!groups[g]) { groups[g] = []; order.push(g); }
+                    groups[g].push(p);
+                  }
+                  return order.map(g => (
+                    <div key={g} className="space-y-2">
+                      {order.length > 1 && <div className="text-xs text-zinc-400 uppercase tracking-widest px-1">{g}</div>}
+                      {groups[g].map(p => (
+                        <div key={p.name} className="bg-zinc-900 rounded-xl border border-zinc-700 overflow-hidden">
+                          <div className="px-3 py-2 border-b border-zinc-700 flex items-center justify-between gap-2">
+                            <span className="text-sm font-semibold text-white truncate">{p.name}</span>
+                            {p.courts.length > 0 && <span className="text-xs text-zinc-500 shrink-0">{p.courts.join(' · ')}</span>}
+                          </div>
+                          <table className="w-full text-sm">
+                            <tbody>
+                              {p.standings.map((s, i) => {
+                                // Highlight the focus team wherever it shows up
+                                const isUs = !!selectedTeam && s.teamCode.toLowerCase() === selectedTeam.toLowerCase();
+                                return (
+                                  <tr key={i} className={`border-b border-zinc-800 last:border-0 ${isUs ? 'bg-yellow-950/40' : ''}`}>
+                                    <td className="pl-3 py-2 w-6 text-center">
+                                      {s.finishRank ? <span className={`text-xs font-bold ${isUs ? 'text-yellow-300' : 'text-zinc-300'}`}>{s.finishRank}</span> : <span className="text-zinc-600 text-xs">{i + 1}</span>}
+                                    </td>
+                                    <td className="px-2 py-2">
+                                      <div className={isUs ? 'text-yellow-300 font-medium' : 'text-zinc-200'}>{s.teamName}</div>
+                                      <div className="text-zinc-600 text-xs">{s.teamCode}</div>
+                                    </td>
+                                    <td className={`px-3 py-2 text-right text-xs whitespace-nowrap ${isUs ? 'text-yellow-400' : 'text-zinc-400'}`}>{s.matchesWon}-{s.matchesLost}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      ))}
+                    </div>
+                  ));
+                })()}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Starting Seeds view — pre-tournament overall ranking */}
+        {view === 'seeds' && (
+          <>
+            {divisionLoading && !divisionData && (
+              <div className="flex items-center justify-center py-20 text-zinc-400">Loading seeds…</div>
+            )}
+            {divisionData && (
+              divisionData.seeds.length > 0 ? (
+                <div>
+                  <div className="text-xs text-zinc-400 uppercase tracking-widest mb-1 px-1">Tournament Seeding</div>
+                  <div className="text-xs text-zinc-500 mb-3 px-1">Starting overall ranking · as seeded before play</div>
+                  <div className="bg-zinc-900 rounded-xl border border-zinc-700 overflow-hidden">
+                    <table className="w-full text-sm">
+                      <tbody>
+                        {divisionData.seeds.map(s => {
+                          const isUs = !!selectedTeam && s.teamCode.toLowerCase() === selectedTeam.toLowerCase();
+                          return (
+                            <tr key={s.teamCode} className={`border-b border-zinc-800 last:border-0 ${isUs ? 'bg-yellow-950/40' : ''}`}>
+                              <td className="pl-3 py-2.5 w-10 text-center">
+                                <span className={`text-xs font-bold font-mono ${isUs ? 'text-yellow-300' : s.seed <= 3 ? 'text-yellow-400' : 'text-zinc-400'}`}>{s.seed}</span>
+                              </td>
+                              <td className="px-2 py-2.5">
+                                <div className={isUs ? 'text-yellow-300 font-medium' : 'text-zinc-200 font-medium'}>{s.teamName}</div>
+                                {s.club && <div className="text-zinc-600 text-xs">{s.club}</div>}
+                              </td>
+                              <td className="px-3 py-2.5 text-right text-zinc-600 text-xs">{s.teamCode}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-zinc-900 rounded-xl border border-zinc-700 p-8 text-center">
+                  <div className="text-4xl mb-3">🔢</div>
+                  <div className="text-white font-semibold mb-1">No starting seeds published</div>
+                  <div className="text-zinc-400 text-sm">This tournament didn’t list a starting overall ranking. When an event seeds teams, they show up here.</div>
+                </div>
+              )
+            )}
+          </>
+        )}
+
+        {/* Court Play view — list floors, drill into one to see its teams */}
+        {view === 'courts' && (
+          <>
+            {divisionLoading && !divisionData && (
+              <div className="flex items-center justify-center py-20 text-zinc-400">Loading courts…</div>
+            )}
+            {divisionData && !selectedCourt && (
+              <div>
+                <div className="text-xs text-zinc-400 uppercase tracking-widest mb-1 px-1">Court Play</div>
+                <div className="text-xs text-zinc-500 mb-3 px-1">Tap a floor to see which teams play there</div>
+                {divisionData.courts.length === 0 ? (
+                  <div className="bg-zinc-900 rounded-xl border border-zinc-700 p-6 text-center text-zinc-400 text-sm">No court assignments published yet.</div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {divisionData.courts.map(c => {
+                      // Mark the floor(s) where the focus team is scheduled
+                      const hasUs = !!selectedTeam && c.entries.some(e => e.teams.some(t => t.teamCode.toLowerCase() === selectedTeam.toLowerCase()));
+                      return (
+                        <button key={c.name} onClick={() => setSelectedCourt(c.name)}
+                          className={`rounded-lg px-3 py-3 text-left border transition-colors ${hasUs ? 'bg-yellow-950/40 border-yellow-800/60 hover:border-yellow-700' : 'bg-zinc-900 border-zinc-700 hover:bg-zinc-800 hover:border-zinc-600'}`}>
+                          <div className={`text-sm font-semibold ${hasUs ? 'text-yellow-300' : 'text-white'}`}>{c.name}</div>
+                          <div className="text-xs text-zinc-500">{hasUs ? 'Your team plays here' : `${c.entries.length} pool${c.entries.length === 1 ? '' : 's'}`}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+            {divisionData && selectedCourt && (() => {
+              const court = divisionData.courts.find(c => c.name === selectedCourt);
+              return (
+                <div className="space-y-3">
+                  <button onClick={() => setSelectedCourt(null)} className="text-zinc-400 hover:text-zinc-200 text-sm">← All courts</button>
+                  <div className="text-lg font-bold text-white px-1">{selectedCourt}</div>
+                  {court?.entries.map((e, ei) => (
+                    <div key={ei} className="bg-zinc-900 rounded-xl border border-zinc-700 overflow-hidden">
+                      <div className="px-3 py-2 border-b border-zinc-700 flex items-center justify-between gap-2">
+                        <span className="text-sm font-semibold text-white truncate">{e.poolName}</span>
+                        <span className="text-xs text-zinc-500 shrink-0">{e.date}{e.complete ? ' · done' : ''}</span>
+                      </div>
+                      <div className="divide-y divide-zinc-800">
+                        {e.teams.map((t, ti) => {
+                          const isUs = !!selectedTeam && t.teamCode.toLowerCase() === selectedTeam.toLowerCase();
+                          return (
+                            <div key={ti} className={`px-3 py-2 flex items-center justify-between gap-2 ${isUs ? 'bg-yellow-950/40' : ''}`}>
+                              <span className={`text-sm ${isUs ? 'text-yellow-300 font-medium' : 'text-zinc-200'}`}>{t.teamName}</span>
+                              <span className="text-zinc-600 text-xs">{t.teamCode}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </>
         )}
       </div>
