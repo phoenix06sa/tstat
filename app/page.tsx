@@ -26,6 +26,9 @@ interface FuturePath {
   bracketTeamCount?: number;
   nextType?: 'pool' | 'bracket' | null;
   nextOpponents?: string[];
+  teamAtRankName?: string | null;
+  teamAtRankWon?: number | null;
+  teamAtRankLost?: number | null;
 }
 interface ChainedBracket {
   bracketName: string; via: string; bracketDate: string; time: string;
@@ -928,6 +931,8 @@ function HomeContent() {
                       const isCurrent = rank === curRank;
                       const expanded = expandedRanks.has(rank);
                       const child = b.node;
+                      const rankNum = parseInt(b.label);
+                      const fp = data.futurePaths.find(f => f.rank === rankNum);
                       return (
                         <div key={i} className={`bg-zinc-900 rounded-xl border overflow-hidden ${isCurrent ? 'border-yellow-700' : 'border-zinc-700'}`}>
                           <button
@@ -939,6 +944,11 @@ function HomeContent() {
                                 <span className={`text-sm font-semibold ${isCurrent ? 'text-yellow-300' : 'text-white'}`}>{b.label} in pool</span>
                                 {isCurrent && <span className="text-[10px] font-bold uppercase tracking-wide text-yellow-300 bg-yellow-900/40 border border-yellow-800/50 rounded px-1 py-0.5">On track now</span>}
                               </div>
+                              {fp?.teamAtRankName && fp.teamAtRankWon != null && fp.teamAtRankLost != null && (
+                                <div className={`text-xs mt-0.5 truncate ${fp.isUs ? 'text-yellow-400' : 'text-zinc-400'}`}>
+                                  {fp.isUs ? 'You' : fp.teamAtRankName} · {fp.teamAtRankWon}-{fp.teamAtRankLost}
+                                </div>
+                              )}
                               <div className="text-xs text-zinc-400 mt-0.5 truncate">→ {child.name.trim()}</div>
                             </div>
                             <span className="text-zinc-500 text-xs shrink-0">{expanded ? '▲' : '▼'}</span>

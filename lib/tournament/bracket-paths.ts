@@ -166,6 +166,9 @@ export interface FuturePath {
   bracketTeamCount: number;
   nextType: 'pool' | 'bracket' | null;
   nextOpponents: string[];
+  teamAtRankName: string | null;
+  teamAtRankWon: number | null;
+  teamAtRankLost: number | null;
 }
 
 interface LeafMatchup {
@@ -671,6 +674,9 @@ export function buildBracketPaths(input: BracketPathsInput): {
       seed: mappedBracket?.seed ?? null,
       bracketRounds,
       bracketTeamCount,
+      teamAtRankName: teamAtRank?.TeamName || null,
+      teamAtRankWon: teamAtRank?.MatchesWon ?? null,
+      teamAtRankLost: teamAtRank?.MatchesLost ?? null,
     });
   }
 
