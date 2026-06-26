@@ -886,38 +886,8 @@ function HomeContent() {
               })();
             })()}
 
-            {/* Predicted Next Round — re-pool formats seed the next pool round
-                from this one; show where each finish leads before brackets seed */}
-            {(() => {
-              const repool = data.futurePaths.filter(f => f.nextType === 'pool');
-              if (repool.length === 0) return null;
-              return (
-                <div>
-                  <div className="text-xs text-zinc-400 uppercase tracking-widest mb-1 px-1">Predicted Next Round</div>
-                  <div className="text-xs text-zinc-500 mb-3 px-1">Where each pool finish leads · opponents resolve as pools complete</div>
-                  <div className="space-y-3">
-                    {repool.map((f) => (
-                      <div key={f.rank} className="bg-zinc-900 rounded-xl border border-zinc-700 px-4 py-3">
-                        <div className="flex items-center justify-between gap-2 mb-1">
-                          <span className="text-sm font-semibold text-yellow-300">{f.finishText}</span>
-                          <span className="text-xs text-zinc-500">
-                            {f.bracketDate || ''}{f.court ? ` · ${f.court}` : ''}
-                          </span>
-                        </div>
-                        <div className="text-sm text-zinc-200">→ {f.nextPlay}</div>
-                        {f.nextOpponents && f.nextOpponents.length > 0 && (
-                          <div className="mt-1 text-xs text-zinc-400">
-                            vs {f.nextOpponents.join(' · ')}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Projected Path — chain every finish to a division (win/lose tree) */}
+            {/* Projected Path — chain every finish to a division (win/lose tree),
+                with the next round's opponents folded in (was "Predicted Next Round") */}
             {!data.eventComplete && data.projection && data.projection.branches.length > 0 && (() => {
               const proj = data.projection!;
               const curRank = data.currentProjectedRank;
@@ -944,7 +914,7 @@ function HomeContent() {
               return (
                 <div>
                   <div className="text-xs text-zinc-400 uppercase tracking-widest mb-1 px-1">Projected Path</div>
-                  <div className="text-xs text-zinc-500 mb-3 px-1">Each finish → its bracket → win/lose, all the way to a division</div>
+                  <div className="text-xs text-zinc-500 mb-3 px-1">Each finish → next round &amp; opponents → bracket → win/lose, all the way to a division</div>
                   <div className="space-y-2">
                     {proj.branches.map((b, i) => {
                       const rank = i + 1;
@@ -975,6 +945,9 @@ function HomeContent() {
                                 </div>
                               )}
                               <div className="text-xs text-zinc-400 mt-0.5 truncate">→ {child.name.trim()}</div>
+                              {fp?.nextOpponents && fp.nextOpponents.length > 0 && (
+                                <div className="text-xs text-zinc-500 mt-0.5">vs {fp.nextOpponents.join(' · ')}</div>
+                              )}
                             </div>
                             <span className="text-zinc-500 text-xs shrink-0">{expanded ? '▲' : '▼'}</span>
                           </button>
