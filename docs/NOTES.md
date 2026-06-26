@@ -622,3 +622,89 @@ Austin Skyline 14 Royal (g14askyl1ls):
 - Pool 6: 1st place (3-0)
 - Challenge Bracket #5: WIN
 - Gold Bracket: Round of 16 WIN vs Roots 14-1 Green (25-23, 12-25, 15-13), then Quarterfinals vs AP 14 adidas
+
+---
+
+## Future Feature: Tiebreaker Display in Projected Path (Not Yet Built)
+
+> **Context (June 26, 2026 — USAV JNCs):** During a live tournament, a parent
+> asked about tiebreaker scenarios in the group chat. The projected path
+> section was enhanced to show team name + W-L record per rank row (committed
+> that session), but the full tiebreaker explanation was deferred. These notes
+> capture what the implementation would look like so it can be picked up later.
+
+### What already exists (no changes needed)
+
+`lib/tournament/standings.ts:buildPoolStandings()` already computes a
+`tiebreaker` string for every team in a tied match-record group:
+
+- `"Tied 2-1 on matches, ranked by set % (66.7%)"` — when set percentages differ
+- `"Tied 2-1 on matches + sets, ranked by point ratio (1.234)"` — when sets are also equal
+
+The `PoolStanding` interface already carries `tiebreaker: string | null` on every
+team object. The field is computed and returned by the API — it is just never
+rendered in `app/page.tsx`.
+
+### What the UI does today
+
+Nothing — the `tiebreaker` field flows through the API but is silently dropped
+in the UI. The pool standings table shows W/L/sets/rank but no tiebreaker note.
+
+### What the full feature would look like
+
+**Option A — In the pool standings table:**
+For any team whose `tiebreaker` is not null, show a subtle italic or muted line
+beneath their standings row:
+
+```
+| Austin Skyline 14 Royal  | 2-1 | ... |   ← yellow highlight (us)
+|   ↳ Tied 2-1 on matches, ranked by set % (66.7%)           |
+```
+
+**Option B — In the Projected Path rows (under team name + record):**
+Each rank row already shows `"TeamName · W-L"`. Add a third line for the
+tiebreaker explanation when one exists:
+
+```
+2nd in pool
+  Norco Select 14 · 2-1
+  ↳ Tied 2-1 on matches, ranked by set % (72.0%)
+  → Silver D Bracket
+```
+
+Both options can coexist. Option A is more discoverable; Option B puts the
+context right where the user is reading the projected path.
+
+### Files to touch
+
+1. **`app/page.tsx`** — render `standing.tiebreaker` in:
+   - The standings table rows (Option A): look for the standings `.map()` block
+     and add a conditional sub-row when `standing.tiebreaker` is not null
+   - The projected path `.map()` block (Option B): `FuturePath` already carries
+     `teamAtRankName/Won/Lost`; add `teamAtRankTiebreaker` (see step 2)
+
+2. **`lib/tournament/bracket-paths.ts`** — add `teamAtRankTiebreaker: string | null`
+   to the `FuturePath` interface and populate it in the `futurePaths.push()` call.
+   This requires standings data at that point — `buildBracketPaths()` already
+   receives the standings array, so it's a matter of looking up the matching
+   `PoolStanding` by team code and reading `.tiebreaker`.
+
+3. **`lib/tournament/standings.ts`** — already complete; no changes needed.
+
+### AES tiebreaker rules (confirmed)
+
+AES breaks pool ties in this order:
+1. Match win % (`MatchPercent` field on each team in pool play data)
+2. Set win % (`SetPercent`)
+3. Point ratio (`PointRatio`)
+
+The `buildPoolStandings()` function groups teams by match record, checks whether
+set percentages differ within the group, and produces the correct explanation
+string automatically. The logic handles all three tiebreaker levels.
+
+### When to implement
+
+This is a polish feature — not urgent mid-tournament. Good time to add it:
+- Before next season, when testing on a pre-tournament pool draw
+- Or on-demand if a parent group chat scenario comes up again where tiebreaker
+  context would have changed what they looked at
