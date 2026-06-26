@@ -62,9 +62,8 @@ export async function GET(req: Request) {
         seenPool.add(key);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const teams: any[] = p.Teams || [];
-        const standings = buildPoolStandings(teams, '')
-          .sort((a, b) => (a.finishRank ?? 99) - (b.finishRank ?? 99)
-            || (b.matchesWon - b.matchesLost) - (a.matchesWon - a.matchesLost));
+        // buildPoolStandings already orders by FinishRank, else live performance
+        const standings = buildPoolStandings(teams, '');
         pools.push({
           name: p.CompleteFullName || p.FullName || '',
           courts: (p.Courts || []).map((c: { Name: string }) => c.Name),

@@ -18,6 +18,30 @@ export interface PoolStanding {
   tiebreaker: string | null;
 }
 
+// Rank two pool teams. Use the official FinishRank once it's posted; until then
+// (live pool play) FinishRank is null, so fall back to AES's tiebreaker order:
+// match win % → set win % → point ratio. Without this, live standings/projections
+// fall back to the raw AES slot order — a 3-0 team can show below a 1-2 team.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function comparePoolTeams(a: any, b: any): number {
+  const fa = a.FinishRank ?? null;
+  const fb = b.FinishRank ?? null;
+  if (fa !== null && fb !== null && fa !== fb) return fa - fb;
+  if (fa !== null && fb === null) return -1;
+  if (fa === null && fb !== null) return 1;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const winPct = (t: any) => {
+    const tot = (t.MatchesWon || 0) + (t.MatchesLost || 0);
+    return tot ? t.MatchesWon / tot : 0;
+  };
+  if (winPct(a) !== winPct(b)) return winPct(b) - winPct(a);
+  const sa = a.SetPercent ?? 0, sb = b.SetPercent ?? 0;
+  if (sa !== sb) return sb - sa;
+  const pa = a.PointRatio ?? 0, pb = b.PointRatio ?? 0;
+  if (pa !== pb) return pb - pa;
+  return 0;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function buildPoolStandings(rawTeams: any[], teamCode: string): PoolStanding[] {
   const matchRecordGroups: Record<string, typeof rawTeams> = {};
@@ -40,7 +64,7 @@ export function buildPoolStandings(rawTeams: any[], teamCode: string): PoolStand
     }
   }
 
-  return rawTeams.map((t) => ({
+  return [...rawTeams].sort(comparePoolTeams).map((t) => ({
     teamName: t.TeamName,
     teamCode: t.TeamCode,
     isUs: t.TeamCode?.toLowerCase() === teamCode.toLowerCase(),

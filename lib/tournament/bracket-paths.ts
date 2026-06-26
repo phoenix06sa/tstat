@@ -7,7 +7,7 @@
 //   2. After pool play: match actual team names in the bracket tree
 
 import { fmtTime, fmtDate, stripLocationCode, stripAllSuffixes, ordinal, extractAllSources } from '@/lib/aes';
-import { buildPoolStandings } from './standings';
+import { buildPoolStandings, comparePoolTeams } from './standings';
 import type { DayPlays, BracketEntry, FinishRangeMap } from './types';
 
 export interface PoolRef {
@@ -261,8 +261,9 @@ export function buildBracketPaths(input: BracketPathsInput): {
 } {
   const { allBrackets, allDaysPlays, rawTeams, teamCode, teamName, poolKey, bracketFinishRanges } = input;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sortedStandings = [...rawTeams].sort((a: any, b: any) => (a.FinishRank ?? 99) - (b.FinishRank ?? 99));
+  // Rank by official FinishRank when posted, else by live performance — so the
+  // projected "Nth in pool" matches current standings during pool play.
+  const sortedStandings = [...rawTeams].sort(comparePoolTeams);
   // AES tiebreaker explanation per team (e.g. "Tied 2-1 on matches, ranked by
   // set % (66.7%)"), so the projected path can show *why* a team holds its rank.
   const tiebreakerByCode = new Map<string, string | null>(
@@ -298,7 +299,7 @@ export function buildBracketPaths(input: BracketPathsInput): {
         .find((p: { CompleteFullName?: string; FullName?: string }) => normalizePoolKey(p.CompleteFullName || p.FullName || '') === ref.poolKey);
       if (pool) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const teams = [...(pool.Teams || [])].sort((a: any, b: any) => (a.FinishRank ?? 99) - (b.FinishRank ?? 99));
+        const teams = [...(pool.Teams || [])].sort(comparePoolTeams);
         const team = teams[ref.rank - 1];
         if (team?.FinishRank !== null && team?.FinishRank !== undefined) {
           return team.TeamName;
@@ -498,7 +499,7 @@ export function buildBracketPaths(input: BracketPathsInput): {
       });
     if (pool) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const teams = [...((pool as any).Teams || [])].sort((a: any, b: any) => (a.FinishRank ?? 99) - (b.FinishRank ?? 99));
+      const teams = [...((pool as any).Teams || [])].sort(comparePoolTeams);
       const team = teams[ref.rank - 1];
       if (team?.FinishRank !== null && team?.FinishRank !== undefined) return team.TeamName;
     }
@@ -618,7 +619,7 @@ export function buildBracketPaths(input: BracketPathsInput): {
           .find((p: { CompleteFullName?: string; FullName?: string }) => normalizePoolKey(p.CompleteFullName || p.FullName || '') === oppPoolRef.poolKey);
         if (oppPool) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const oppTeams = [...(oppPool.Teams || [])].sort((a: any, b: any) => (a.FinishRank ?? 99) - (b.FinishRank ?? 99));
+          const oppTeams = [...(oppPool.Teams || [])].sort(comparePoolTeams);
           const oppTeam = oppTeams[oppPoolRef.rank - 1];
           if (oppTeam?.FinishRank !== null && oppTeam?.FinishRank !== undefined) {
             opponentResolved = oppTeam.TeamName;
@@ -879,7 +880,7 @@ export function buildBracketPaths(input: BracketPathsInput): {
   const startName = (startPoolPlay as { CompleteFullName?: string; FullName?: string } | undefined)?.CompleteFullName
     || (startPoolPlay as { FullName?: string } | undefined)?.FullName || 'Current Pool';
   let currentProjectedRank = 0;
-  [...startTeams].sort((a, b) => (a.FinishRank ?? 99) - (b.FinishRank ?? 99))
+  [...startTeams].sort(comparePoolTeams)
     .forEach((t, i) => { if (t.TeamCode?.toLowerCase() === teamCode.toLowerCase()) currentProjectedRank = i + 1; });
   const projectionRoot = buildPoolNode(poolKey, startName, 0, new Set());
   const projection = projectionRoot.branches.length > 0 ? projectionRoot : null;
