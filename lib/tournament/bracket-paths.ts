@@ -7,6 +7,7 @@
 //   2. After pool play: match actual team names in the bracket tree
 
 import { fmtTime, fmtDate, stripLocationCode, stripAllSuffixes, ordinal, extractAllSources } from '@/lib/aes';
+import { buildPoolStandings } from './standings';
 import type { DayPlays, BracketEntry, FinishRangeMap } from './types';
 
 export interface PoolRef {
@@ -169,6 +170,7 @@ export interface FuturePath {
   teamAtRankName: string | null;
   teamAtRankWon: number | null;
   teamAtRankLost: number | null;
+  teamAtRankTiebreaker: string | null;
 }
 
 interface LeafMatchup {
@@ -261,6 +263,11 @@ export function buildBracketPaths(input: BracketPathsInput): {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sortedStandings = [...rawTeams].sort((a: any, b: any) => (a.FinishRank ?? 99) - (b.FinishRank ?? 99));
+  // AES tiebreaker explanation per team (e.g. "Tied 2-1 on matches, ranked by
+  // set % (66.7%)"), so the projected path can show *why* a team holds its rank.
+  const tiebreakerByCode = new Map<string, string | null>(
+    buildPoolStandings(rawTeams, teamCode).map(s => [s.teamCode, s.tiebreaker])
+  );
 
   // Build a map: poolNum_rank → { bracketName, matchups, court, time, date }
   // by parsing leaf-level team texts in each bracket
@@ -677,6 +684,7 @@ export function buildBracketPaths(input: BracketPathsInput): {
       teamAtRankName: teamAtRank?.TeamName || null,
       teamAtRankWon: teamAtRank?.MatchesWon ?? null,
       teamAtRankLost: teamAtRank?.MatchesLost ?? null,
+      teamAtRankTiebreaker: teamAtRank ? (tiebreakerByCode.get(teamAtRank.TeamCode) ?? null) : null,
     });
   }
 

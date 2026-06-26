@@ -29,6 +29,7 @@ interface FuturePath {
   teamAtRankName?: string | null;
   teamAtRankWon?: number | null;
   teamAtRankLost?: number | null;
+  teamAtRankTiebreaker?: string | null;
 }
 interface ChainedBracket {
   bracketName: string; via: string; bracketDate: string; time: string;
@@ -800,7 +801,10 @@ function HomeContent() {
                               {s.teamName}
                             </div>
                             <div className="text-zinc-500 text-xs">{s.teamCode}</div>
-                            {s.tiebreaker && s.finishRank !== null && (
+                            {/* Show the tiebreaker live (once any match is played),
+                                not just after the pool finalizes — that's the
+                                useful view during pool play. */}
+                            {s.tiebreaker && (s.matchesWon + s.matchesLost) > 0 && (
                               <div className={`text-xs mt-0.5 ${s.isUs ? 'text-yellow-600' : 'text-zinc-500'}`}>
                                 ↑ {s.tiebreaker}
                               </div>
@@ -947,6 +951,11 @@ function HomeContent() {
                               {fp?.teamAtRankName && fp.teamAtRankWon != null && fp.teamAtRankLost != null && (
                                 <div className={`text-xs mt-0.5 truncate ${fp.isUs ? 'text-yellow-400' : 'text-zinc-400'}`}>
                                   {fp.isUs ? 'You' : fp.teamAtRankName} · {fp.teamAtRankWon}-{fp.teamAtRankLost}
+                                </div>
+                              )}
+                              {fp?.teamAtRankTiebreaker && (
+                                <div className={`text-[11px] mt-0.5 ${fp.isUs ? 'text-yellow-600' : 'text-zinc-500'}`}>
+                                  ↳ {fp.teamAtRankTiebreaker}
                                 </div>
                               )}
                               <div className="text-xs text-zinc-400 mt-0.5 truncate">→ {child.name.trim()}</div>
