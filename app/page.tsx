@@ -1307,9 +1307,9 @@ function HomeContent() {
                       {order.length > 1 && <div className="text-xs text-zinc-400 uppercase tracking-widest px-1">{g}</div>}
                       {groups[g].map(p => (
                         <div key={p.name} className="bg-zinc-900 rounded-xl border border-zinc-700 overflow-hidden">
-                          <div className="px-3 py-2 border-b border-zinc-700 flex items-center justify-between gap-2">
-                            <span className="text-sm font-semibold text-white truncate">{p.name}</span>
-                            {p.courts.length > 0 && <span className="text-xs text-zinc-500 shrink-0">{p.courts.join(' · ')}</span>}
+                          <div className="px-3 py-2 border-b border-zinc-700">
+                            <div className="text-sm font-semibold text-white">{p.name}</div>
+                            {p.courts.length > 0 && <div className="text-xs text-zinc-500 mt-0.5">{p.courts.join(' · ')}</div>}
                           </div>
                           <table className="w-full text-sm">
                             <tbody>
