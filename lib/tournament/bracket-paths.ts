@@ -224,6 +224,17 @@ export interface BracketCard {
                            // predictions: any of several we *could* land in.
 }
 
+// Full projected path: a tree from the team's current pool down to terminal
+// divisions. Pool nodes branch by finish rank (1st/2nd/…); bracket nodes branch
+// by Win/Lose. Division nodes are leaves carrying the overall finish range.
+export interface ProjectionBranch { label: string; node: ProjectionNode }
+export interface ProjectionNode {
+  name: string;
+  kind: 'pool' | 'bracket' | 'division';
+  finishRange?: string;
+  branches: ProjectionBranch[];
+}
+
 export interface BracketPathsInput {
   allBrackets: BracketEntry[];
   allDaysPlays: DayPlays[];
@@ -240,6 +251,8 @@ export function buildBracketPaths(input: BracketPathsInput): {
   bracketTrees: Record<string, { rounds: BracketRound[]; teamCount: number; startTime: string; date: string }>;
   chainedPaths: ChainedBracket[];
   bracketCards: BracketCard[];
+  projection: ProjectionNode | null;
+  currentProjectedRank: number;
 } {
   const { allBrackets, allDaysPlays, rawTeams, teamCode, teamName, poolKey, bracketFinishRanges } = input;
 
@@ -312,7 +325,9 @@ export function buildBracketPaths(input: BracketPathsInput): {
   const resolveFeed = (text: string): { outcome: 'Winner' | 'Loser'; sourceFull: string } | null => {
     const m = (text || '').match(/^(Winner|Loser) of (.+)$/i);
     if (!m) return null;
-    const token = m[2].replace(/M\d+\s*$/i, '').toUpperCase();
+    // Drop a trailing seed ("Loser of cxG1C1M1 (16)") and the match suffix
+    // ("…M1") before matching the source bracket by ShortName.
+    const token = m[2].replace(/\s*\(\d+\)\s*$/, '').replace(/M\d+\s*$/i, '').toUpperCase();
     const src = byShort.find(b => token.endsWith(b.short));
     if (!src) return null;
     return { outcome: m[1].toLowerCase() === 'winner' ? 'Winner' : 'Loser', sourceFull: src.full };
@@ -759,5 +774,101 @@ export function buildBracketPaths(input: BracketPathsInput): {
   }
   bracketCards.sort((a, b) => a.sortKey - b.sortKey);
 
-  return { futurePaths, bracketTrees, chainedPaths, bracketCards };
+  // ─── Full projected path (win/loss → division tree) ───
+  // Chain every stage from the team's current pool to terminal divisions, reusing
+  // the pool→bracket map (poolRankToBracket) and the bracket feed graph (advances)
+  // the cards already built. Lets the UI show, all the way down: "finish Nth →
+  // this bracket → win = division X / lose = division Y".
+
+  // Size of each pool, and where each finish leads when it feeds another POOL
+  // (re-pool rounds) rather than a bracket.
+  const poolKeyByRoundNum: Record<number, Record<string, string>> = {};
+  const poolSizeByKey: Record<string, number> = {};
+  for (const dayData of allDaysPlays) {
+    for (const play of dayData.plays) {
+      if (play.PlayType !== 0) continue;
+      const k = normalizePoolKey(play.CompleteFullName || play.FullName || '');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      poolSizeByKey[k] = ((play as any).Teams || []).length;
+      const r = roundFrom(k); const num = poolNumFrom(k);
+      if (r !== null && num) { (poolKeyByRoundNum[r] ||= {})[num] = k; }
+    }
+  }
+  const poolFinishToNext: Record<string, Record<number, { name: string; poolKey: string }>> = {};
+  for (const dayData of allDaysPlays) {
+    for (const play of dayData.plays) {
+      if (play.PlayType !== 0) continue;
+      const destName = play.CompleteFullName || play.FullName || '';
+      const destKey = normalizePoolKey(destName);
+      const destRound = roundFrom(destKey);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const t of ((play as any).Teams || [])) {
+        const ref = parsePoolRef(t.TeamText || '');
+        if (!ref) continue;
+        // Bare refs ("2nd-P3") carry no round, so resolve to the prior round.
+        let srcKey = ref.poolKey;
+        if (/^P\d+$/.test(srcKey) && destRound !== null) {
+          srcKey = poolKeyByRoundNum[destRound - 1]?.[ref.poolNum] || srcKey;
+        }
+        (poolFinishToNext[srcKey] ||= {});
+        if (!poolFinishToNext[srcKey][ref.rank]) {
+          poolFinishToNext[srcKey][ref.rank] = { name: destName, poolKey: destKey };
+        }
+      }
+    }
+  }
+
+  const projRange = (name: string): string => {
+    const r = bracketFinishRanges[name];
+    return r ? `${ordinal(r.best)} – ${ordinal(r.worst)} overall` : '';
+  };
+  const buildBracketNode = (name: string, depth: number, seen: Set<string>): ProjectionNode => {
+    const adv = advances[name];
+    const hasAdv = !!adv && !!(adv.Winner || adv.Loser);
+    // Terminal division: no onward feed (or we've gone deep / looped)
+    if (!hasAdv || depth > 12 || seen.has(name)) {
+      return { name, kind: 'division', finishRange: projRange(name), branches: [] };
+    }
+    const seen2 = new Set(seen); seen2.add(name);
+    const branches: ProjectionBranch[] = [];
+    for (const [outcome, label] of [['Winner', 'Win'], ['Loser', 'Lose']] as const) {
+      const dest = adv[outcome];
+      if (dest) branches.push({ label, node: buildBracketNode(dest, depth + 1, seen2) });
+    }
+    return { name, kind: 'bracket', branches };
+  };
+  const buildPoolNode = (pKey: string, pName: string, depth: number, seen: Set<string>): ProjectionNode => {
+    const node: ProjectionNode = { name: pName, kind: 'pool', branches: [] };
+    if (depth > 12 || seen.has(pKey)) return node;
+    const seen2 = new Set(seen); seen2.add(pKey);
+    const size = poolSizeByKey[pKey] || 0;
+    for (let rank = 1; rank <= size; rank++) {
+      const br = poolRankToBracket[`${pKey}_${rank}`];
+      let child: ProjectionNode | null = null;
+      if (br) child = buildBracketNode(br.bracketName, depth + 1, seen2);
+      else {
+        const np = poolFinishToNext[pKey]?.[rank];
+        if (np) child = buildPoolNode(np.poolKey, np.name, depth + 1, seen2);
+      }
+      if (child) node.branches.push({ label: ordinal(rank), node: child });
+    }
+    return node;
+  };
+
+  // Start from the team's current (latest) pool and record where they currently
+  // sit, so the UI can highlight/expand that line.
+  const startPoolPlay = allDaysPlays.flatMap(d => d.plays)
+    .find((p: { PlayType: number; CompleteFullName?: string; FullName?: string }) =>
+      p.PlayType === 0 && normalizePoolKey(p.CompleteFullName || p.FullName || '') === poolKey);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const startTeams: any[] = (startPoolPlay as any)?.Teams || rawTeams;
+  const startName = (startPoolPlay as { CompleteFullName?: string; FullName?: string } | undefined)?.CompleteFullName
+    || (startPoolPlay as { FullName?: string } | undefined)?.FullName || 'Current Pool';
+  let currentProjectedRank = 0;
+  [...startTeams].sort((a, b) => (a.FinishRank ?? 99) - (b.FinishRank ?? 99))
+    .forEach((t, i) => { if (t.TeamCode?.toLowerCase() === teamCode.toLowerCase()) currentProjectedRank = i + 1; });
+  const projectionRoot = buildPoolNode(poolKey, startName, 0, new Set());
+  const projection = projectionRoot.branches.length > 0 ? projectionRoot : null;
+
+  return { futurePaths, bracketTrees, chainedPaths, bracketCards, projection, currentProjectedRank };
 }

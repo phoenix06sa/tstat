@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, Suspense } from 'react';
+import { useEffect, useState, useCallback, useRef, Suspense, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 interface SetScore { us: number | null; them: number | null }
@@ -30,6 +30,11 @@ interface FuturePath {
 interface ChainedBracket {
   bracketName: string; via: string; bracketDate: string; time: string;
   bracketRounds: BracketRound[]; bracketTeamCount: number; finishRange: string;
+}
+interface ProjectionBranch { label: string; node: ProjectionNode }
+interface ProjectionNode {
+  name: string; kind: 'pool' | 'bracket' | 'division';
+  finishRange?: string; branches: ProjectionBranch[];
 }
 interface BracketCard {
   bracketName: string; finishRange: string; bracketDate: string; time: string;
@@ -79,6 +84,8 @@ interface TournamentData {
   futurePaths: FuturePath[];
   chainedPaths: ChainedBracket[];
   bracketCards: BracketCard[];
+  projection: ProjectionNode | null;
+  currentProjectedRank: number;
   activeBracket: ActiveBracket | null;
   activeBrackets: Record<string, ActiveBracket>;
   finalStandings: { overallRank: number; tied: boolean; teamName: string; bracket: string; bracketRank: number; isUs: boolean }[];
@@ -194,6 +201,9 @@ function HomeContent() {
   const [divisionData, setDivisionData] = useState<DivisionData | null>(null);
   const [divisionLoading, setDivisionLoading] = useState(false);
   const [selectedCourt, setSelectedCourt] = useState<string | null>(null);
+  // Which top-level finish rows of the projected path are expanded.
+  const [expandedRanks, setExpandedRanks] = useState<Set<number>>(new Set());
+  const projInit = useRef(false);
 
   // Load saved tournaments list from localStorage
   useEffect(() => {
@@ -360,6 +370,14 @@ function HomeContent() {
   // Court drill-down is per-visit; reset it when leaving the courts view.
   useEffect(() => { if (view !== 'courts') setSelectedCourt(null); }, [view]);
 
+  // Default the projected-path tree to the team's current line, once per team.
+  useEffect(() => {
+    if (data?.projection && data.currentProjectedRank && !projInit.current) {
+      setExpandedRanks(new Set([data.currentProjectedRank]));
+      projInit.current = true;
+    }
+  }, [data]);
+
   // Auto-refresh every 90 seconds
   useEffect(() => {
     if (!selectedTeam || !config) return;
@@ -396,6 +414,7 @@ function HomeContent() {
     setSelectedTeam(code);
     localStorage.setItem('tracker_defaultTeam', code);
     setData(null);
+    projInit.current = false; // re-default the projected path for the new team
   }
 
   function handleReconfigure() {
@@ -432,6 +451,7 @@ function HomeContent() {
     setSelectedTeam(t.teamCode);
     setData(null);
     setDivisionData(null); // division-wide data is event/division specific
+    projInit.current = false;
     setShowTournamentSwitcher(false);
   }
 
@@ -869,6 +889,68 @@ function HomeContent() {
                         )}
                       </div>
                     ))}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Projected Path — chain every finish to a division (win/lose tree) */}
+            {!data.eventComplete && data.projection && data.projection.branches.length > 0 && (() => {
+              const proj = data.projection!;
+              const curRank = data.currentProjectedRank;
+              const renderBranches = (node: ProjectionNode, depth: number): ReactNode => (
+                <div className={depth > 0 ? 'ml-2.5 pl-2.5 border-l border-zinc-800 space-y-1 mt-1' : 'space-y-1'}>
+                  {node.branches.map((b, i) => {
+                    const child = b.node;
+                    const isDiv = child.kind === 'division';
+                    const labelColor = b.label === 'Win' ? 'text-emerald-400' : b.label === 'Lose' ? 'text-red-400' : 'text-zinc-500';
+                    return (
+                      <div key={i}>
+                        <div className="flex items-baseline gap-2 text-xs">
+                          <span className={`font-mono shrink-0 ${labelColor}`}>{b.label}</span>
+                          <span className={isDiv ? 'text-white font-semibold' : 'text-zinc-300'}>
+                            {child.name.trim()}{child.finishRange ? ` · ${child.finishRange}` : ''}
+                          </span>
+                        </div>
+                        {child.branches.length > 0 && renderBranches(child, depth + 1)}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+              return (
+                <div>
+                  <div className="text-xs text-zinc-400 uppercase tracking-widest mb-1 px-1">Projected Path</div>
+                  <div className="text-xs text-zinc-500 mb-3 px-1">Each finish → its bracket → win/lose, all the way to a division</div>
+                  <div className="space-y-2">
+                    {proj.branches.map((b, i) => {
+                      const rank = i + 1;
+                      const isCurrent = rank === curRank;
+                      const expanded = expandedRanks.has(rank);
+                      const child = b.node;
+                      return (
+                        <div key={i} className={`bg-zinc-900 rounded-xl border overflow-hidden ${isCurrent ? 'border-yellow-700' : 'border-zinc-700'}`}>
+                          <button
+                            onClick={() => setExpandedRanks(prev => { const n = new Set(prev); if (n.has(rank)) n.delete(rank); else n.add(rank); return n; })}
+                            className="w-full px-4 py-3 flex items-center justify-between gap-2 text-left"
+                          >
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className={`text-sm font-semibold ${isCurrent ? 'text-yellow-300' : 'text-white'}`}>{b.label} in pool</span>
+                                {isCurrent && <span className="text-[10px] font-bold uppercase tracking-wide text-yellow-300 bg-yellow-900/40 border border-yellow-800/50 rounded px-1 py-0.5">On track now</span>}
+                              </div>
+                              <div className="text-xs text-zinc-400 mt-0.5 truncate">→ {child.name.trim()}</div>
+                            </div>
+                            <span className="text-zinc-500 text-xs shrink-0">{expanded ? '▲' : '▼'}</span>
+                          </button>
+                          {expanded && (
+                            <div className="px-4 pb-3 pt-2 border-t border-zinc-800">
+                              {renderBranches(child, 0)}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               );

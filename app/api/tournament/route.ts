@@ -155,7 +155,7 @@ export async function GET(req: Request) {
     const finalBrackets = finalDay ? finalDay.plays.filter((p: { PlayType: number }) => p.PlayType === 1) : [];
     const { bracketFinishRanges, totalTeams } = buildFinishRanges(finalBrackets);
 
-    const { futurePaths, chainedPaths, bracketCards } = buildBracketPaths({
+    const { futurePaths, chainedPaths, bracketCards, projection, currentProjectedRank } = buildBracketPaths({
       allBrackets,
       allDaysPlays,
       rawTeams: seedTeams,
@@ -195,6 +195,8 @@ export async function GET(req: Request) {
       futurePaths,
       chainedPaths,
       bracketCards,
+      projection,
+      currentProjectedRank,
       activeBracket,
       activeBrackets,
       finalStandings,
