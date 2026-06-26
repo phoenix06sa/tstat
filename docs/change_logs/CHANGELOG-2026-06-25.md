@@ -94,9 +94,52 @@ Files: `app/api/division/route.ts`.
 
 ---
 
+## 7. Projected Path — full win/loss tree to a division
+
+The predictor stopped one hop out (pool finish → next pool round). The Live
+Tracker now projects the **whole** path: every finish → its bracket → win/lose
+→ the division you'd land in — the AES "suppose a win or loss" view, assembled
+automatically and chained through every stage.
+
+- `buildBracketPaths` now returns a recursive `projection` tree (pool finishes
+  branch by rank; brackets branch Win/Lose; divisions are leaves) plus
+  `currentProjectedRank`. It reuses the maps the cards already build —
+  `poolRankToBracket` (finish → bracket) and `advances` (bracket feed graph) —
+  generalized with a pool→next-pool map so it can walk multiple re-pool rounds.
+- UI: a collapsible **Projected Path** section in the tracker. The team's current
+  line is expanded by default and badged "On track now"; Win branches are green,
+  Lose red. Shown only while an event is in progress.
+- **Bug fixed:** `resolveFeed` didn't strip the trailing seed in feed refs like
+  `Loser of cxG1C1M1 (16)`, so the bracket feed graph came back empty for these
+  events. That's the same gap that left `chainedPaths` empty earlier (parked from
+  the June 23 session) — fixing it powers both the projection and the
+  chained-bracket cards.
+
+Note: division **finish ranges** (e.g. "Gold · 1st–8th") fill in once the bracket
+stage seeds; they're blank very early (`totalTeams: 0`). Like seeds, the feed refs
+are overwritten with real team names once brackets populate, so the projection is
+a live/upcoming-event feature.
+
+Example (Austin Skyline 14 Royal, currently 2nd in Round 1 Pool 3):
+
+```
+2nd in pool → Round 2 Group 1 Pool 2
+  1st → Challenge 2   Win → Gold     Lose → Silver B
+  2nd → Challenge 1   Win → Gold     Lose → Silver A
+  3rd → Challenge A   Win → Bronze   Lose → Flight 1
+```
+
+Files: `lib/tournament/bracket-paths.ts`, `app/api/tournament/route.ts`,
+`app/page.tsx`.
+
+---
+
 ## Verified
 
 - `npx tsc --noEmit` clean; `npm run build` succeeds; `/api/division` registered.
+- Projected Path resolves the full tree on USAV 14s (matches a manual trace);
+  regression smoke unchanged across all 8 events; the projection is hidden on
+  completed events (AAU) as intended.
 - USAV 14s `200800` (live): 22 pools, **48 seeds** (seed 1 = Vaqueras 14F
   Gilbert, **Austin Skyline 14 Royal = 16**, matches AES), 33 courts;
   `poolPlayComplete=false`; focus-team highlight shows across pools/seeds/courts.
