@@ -741,9 +741,17 @@ function HomeContent() {
                 if (!matchesByDate[d]) matchesByDate[d] = [];
                 matchesByDate[d].push(m);
               }
-              const usedDates = new Set<string>();
-              const singlePool = pools.length <= 1;
               const year = (data.dates.match(/\b(20\d{2})\b/) || [])[1] || '';
+              // Chronological sort key from a formatted date like "Thu, Jun 25",
+              // so match days order correctly even when a day has no pool of its
+              // own (e.g. Friday continuing Thursday's pool).
+              const monthNames = Object.keys(MONTHS);
+              const dateKey = (formatted: string): number => {
+                const mm = (formatted || '').match(/([A-Za-z]{3,})\s+(\d+)/);
+                if (!mm) return -1;
+                const mon = monthNames.indexOf(mm[1].slice(0, 3));
+                return mon < 0 ? -1 : mon * 100 + parseInt(mm[2]);
+              };
 
               const matchCard = (m: PoolMatch, i: number) => (
                 <div key={i} className={`bg-zinc-900 rounded-xl border p-4 ${
@@ -826,48 +834,56 @@ function HomeContent() {
                 </div>
               );
 
-              return (
-                <>
-                  {pools.map((pool, pi) => {
-                    const dl = splitDateLabel(pool.date, year);
-                    let roundMatches: PoolMatch[] = [];
-                    if (pool.date && matchesByDate[pool.date]) {
-                      roundMatches = matchesByDate[pool.date];
-                      usedDates.add(pool.date);
-                    } else if (singlePool) {
-                      roundMatches = data.matches.filter(m => m.isPoolPlay);
-                      Object.keys(matchesByDate).forEach(k => usedDates.add(k));
-                    }
-                    return (
-                      <div key={pi} className="space-y-3">
-                        {standingsTable(pool, dl)}
-                        {roundMatches.length > 0 && (
-                          <div className="space-y-3">
-                            <div className="flex items-baseline justify-between gap-2 px-1">
-                              <div className="text-base font-bold text-white">{dl.weekday ? `${dl.weekday}: ` : ''}Matches</div>
-                              {dl.full && <div className="text-xs text-zinc-400 shrink-0">{dl.full}</div>}
-                            </div>
-                            {roundMatches.map(matchCard)}
-                          </div>
-                        )}
+              return (() => {
+                const poolsSorted = [...pools].sort((a, b) => dateKey(a.date) - dateKey(b.date));
+                const sortedDates = Object.keys(matchesByDate).sort((a, b) => dateKey(a) - dateKey(b));
+                // Each match day belongs to the latest pool round on/before it, so
+                // a pool's extra days stay with that pool instead of sorting after
+                // the next round. Days before any pool fall to the earliest pool.
+                const ownerIndexFor = (d: string): number => {
+                  if (poolsSorted.length <= 1) return poolsSorted.length - 1; // 0, or -1 if no pools
+                  let idx = -1;
+                  poolsSorted.forEach((p, i) => { if (p.date && dateKey(p.date) <= dateKey(d)) idx = i; });
+                  return idx >= 0 ? idx : poolsSorted.findIndex(p => p.date);
+                };
+                const ownedDates = new Map<number, string[]>();
+                const owned = new Set<string>();
+                for (const d of sortedDates) {
+                  const idx = ownerIndexFor(d);
+                  if (idx < 0) continue; // no pool to own it → safety net below
+                  if (!ownedDates.has(idx)) ownedDates.set(idx, []);
+                  ownedDates.get(idx)!.push(d);
+                  owned.add(d);
+                }
+                const matchGroup = (d: string) => {
+                  const ddl = splitDateLabel(d, year);
+                  return (
+                    <div key={d} className="space-y-3">
+                      <div className="flex items-baseline justify-between gap-2 px-1">
+                        <div className="text-base font-bold text-white">{ddl.weekday ? `${ddl.weekday}: ` : ''}Matches</div>
+                        {(ddl.full || d) && <div className="text-xs text-zinc-400 shrink-0">{ddl.full || d}</div>}
                       </div>
-                    );
-                  })}
-                  {/* Safety net: any pool matches whose date didn't line up with a round */}
-                  {Object.entries(matchesByDate).filter(([d]) => !usedDates.has(d)).map(([date, ms]) => {
-                    const dl = splitDateLabel(date, year);
-                    return (
-                      <div key={date} className="space-y-3">
-                        <div className="flex items-baseline justify-between gap-2 px-1">
-                          <div className="text-base font-bold text-white">{dl.weekday ? `${dl.weekday}: ` : ''}Matches</div>
-                          {(dl.full || date) && <div className="text-xs text-zinc-400 shrink-0">{dl.full || date}</div>}
+                      {matchesByDate[d].map(matchCard)}
+                    </div>
+                  );
+                };
+                return (
+                  <>
+                    {poolsSorted.map((pool, pi) => {
+                      const dl = splitDateLabel(pool.date, year);
+                      const dates = (ownedDates.get(pi) || []).sort((a, b) => dateKey(a) - dateKey(b));
+                      return (
+                        <div key={pi} className="space-y-3">
+                          {standingsTable(pool, dl)}
+                          {dates.map(matchGroup)}
                         </div>
-                        {ms.map(matchCard)}
-                      </div>
-                    );
-                  })}
-                </>
-              );
+                      );
+                    })}
+                    {/* Safety net: match days no pool owned (e.g. no pools at all) */}
+                    {sortedDates.filter(d => !owned.has(d)).map(matchGroup)}
+                  </>
+                );
+              })();
             })()}
 
             {/* Predicted Next Round — re-pool formats seed the next pool round
