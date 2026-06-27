@@ -374,10 +374,13 @@ function HomeContent() {
   // Court drill-down is per-visit; reset it when leaving the courts view.
   useEffect(() => { if (view !== 'courts') setSelectedCourt(null); }, [view]);
 
-  // Default the projected-path tree to the team's current line, once per team.
+  // Default the projected-path tree to the team's current line, once per team —
+  // but only once the pool has started (before that the rank is just seed order,
+  // so favoring a line would be misleading). Leave all collapsed until then.
   useEffect(() => {
-    if (data?.projection && data.currentProjectedRank && !projInit.current) {
-      setExpandedRanks(new Set([data.currentProjectedRank]));
+    if (data?.projection && !projInit.current) {
+      const started = data.futurePaths.some(f => ((f.teamAtRankWon ?? 0) + (f.teamAtRankLost ?? 0)) > 0);
+      setExpandedRanks(started && data.currentProjectedRank ? new Set([data.currentProjectedRank]) : new Set());
       projInit.current = true;
     }
   }, [data]);
@@ -890,7 +893,11 @@ function HomeContent() {
                 with the next round's opponents folded in (was "Predicted Next Round") */}
             {!data.eventComplete && data.projection && data.projection.branches.length > 0 && (() => {
               const proj = data.projection!;
-              const curRank = data.currentProjectedRank;
+              // The projected rank only means something once games are played.
+              // Before that everyone is 0-0 and the "rank" is just seed/slot
+              // order, so don't flag any line as the one we're on track for.
+              const poolStarted = data.futurePaths.some(f => ((f.teamAtRankWon ?? 0) + (f.teamAtRankLost ?? 0)) > 0);
+              const curRank = poolStarted ? data.currentProjectedRank : -1;
               const renderBranches = (node: ProjectionNode, depth: number): ReactNode => (
                 <div className={depth > 0 ? 'ml-2.5 pl-2.5 border-l border-zinc-800 space-y-1 mt-1' : 'space-y-1'}>
                   {node.branches.map((b, i) => {
@@ -915,6 +922,11 @@ function HomeContent() {
                 <div>
                   <div className="text-xs text-zinc-400 uppercase tracking-widest mb-1 px-1">Projected Path</div>
                   <div className="text-xs text-zinc-500 mb-3 px-1">Each finish → next round &amp; opponents → bracket → win/lose, all the way to a division</div>
+                  {!poolStarted && (
+                    <div className="text-xs text-amber-300/90 bg-amber-900/20 border border-amber-800/40 rounded-lg px-3 py-2 mb-3">
+                      Prediction hasn’t started — your pool is still 0-0, so no finish is favored yet. This updates as games are played.
+                    </div>
+                  )}
                   <div className="space-y-2">
                     {proj.branches.map((b, i) => {
                       const rank = i + 1;
