@@ -58,13 +58,33 @@ Files: `docs/NOTES.md`.
 
 Files: `docs/REGRESSION-EVENTS.md`, `docs/regression-smoke.sh`.
 
+## 4. Bug: division brackets vanished once the bracket stage was reached
+
+Once Austin Skyline's pool play finished and brackets were live, the Bracket
+Play section lost every division (Gold/Silver/Bronze/Flights) — only the
+Challenge brackets remained, and the team's actual bracket (Silver A) showed
+empty via the fallback.
+
+- Root cause: `finalDay` was `allDaysPlays[last]` — the last *calendar* day. AES
+  now publishes **empty arrays** for later event days (06-29 → 07-03), which got
+  included, so `finalDay` pointed at an empty day. `buildFinishRanges([])` →
+  `totalTeams: 0` → no division got a finish range → no division card.
+- Fix: pick `finalDay` as the last day that actually **has brackets**, not the
+  last calendar day. Also fixes a latent bug where final standings would never
+  appear once this event completes (its last bracket day ≠ its last calendar day).
+- After: `totalTeams: 48`, all divisions back with ranges (Gold 1st–8th, Silver A
+  9th–12th, …). Completed events unchanged (their last day already had brackets).
+
+Files: `app/api/tournament/route.ts`.
+
 ---
 
 ## Verified
 
 - `npx tsc --noEmit` clean; `npm run build` succeeds.
-- `bash docs/regression-smoke.sh`: all 9 rows OK, no duplicate pools; USAV
-  `200800`/`200821` report `proj=3br/5div` (multi-stage chain resolves).
+- `bash docs/regression-smoke.sh`: all 9 rows OK, no duplicate pools; both USAV
+  divisions now `totalTeams=48` (was 0); completed events unchanged
+  (AAU 131/131, LSR 64/64, etc.).
 - Projected Path for Austin Skyline's not-yet-started pool shows no team pinned to
   a finish and no "(N/A)" tiebreaker; reverts to full detail once a match is
   played.

@@ -150,8 +150,12 @@ export async function GET(req: Request) {
       }
     }
 
-    // Use the last day's brackets as the "final" brackets for ranking
-    const finalDay = allDaysPlays[allDaysPlays.length - 1];
+    // The brackets that decide overall finish live on the LAST day that actually
+    // HAS brackets — not necessarily the last calendar day. Later event days can
+    // return empty arrays once AES publishes them, which would otherwise pick an
+    // empty day and zero out finish ranges (and, later, final standings).
+    const finalDay = [...allDaysPlays].reverse().find(d => d.plays.some((p: { PlayType: number }) => p.PlayType === 1))
+      || allDaysPlays[allDaysPlays.length - 1];
     const finalBrackets = finalDay ? finalDay.plays.filter((p: { PlayType: number }) => p.PlayType === 1) : [];
     const { bracketFinishRanges, totalTeams } = buildFinishRanges(finalBrackets);
 
