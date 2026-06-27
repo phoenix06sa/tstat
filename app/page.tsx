@@ -1036,12 +1036,15 @@ function HomeContent() {
                                 <span className={`text-sm font-semibold ${isCurrent ? 'text-yellow-300' : 'text-white'}`}>{b.label} in pool</span>
                                 {isCurrent && <span className="text-[10px] font-bold uppercase tracking-wide text-yellow-300 bg-yellow-900/40 border border-yellow-800/50 rounded px-1 py-0.5">On track now</span>}
                               </div>
-                              {fp?.teamAtRankName && fp.teamAtRankWon != null && fp.teamAtRankLost != null && (
+                              {/* Before the pool plays, every team is 0-0 and the
+                                  rank is just seed order — so don't pin a team (or
+                                  a meaningless "(N/A)" tiebreaker) to each finish. */}
+                              {poolStarted && fp?.teamAtRankName && fp.teamAtRankWon != null && fp.teamAtRankLost != null && (
                                 <div className={`text-xs mt-0.5 truncate ${fp.isUs ? 'text-yellow-400' : 'text-zinc-400'}`}>
                                   {fp.isUs ? 'You' : fp.teamAtRankName} · {fp.teamAtRankWon}-{fp.teamAtRankLost}
                                 </div>
                               )}
-                              {fp?.teamAtRankTiebreaker && (
+                              {poolStarted && fp?.teamAtRankTiebreaker && (
                                 <div className={`text-[11px] mt-0.5 ${fp.isUs ? 'text-yellow-600' : 'text-zinc-500'}`}>
                                   ↳ {fp.teamAtRankTiebreaker}
                                 </div>

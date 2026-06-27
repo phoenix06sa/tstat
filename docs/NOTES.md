@@ -708,3 +708,42 @@ This is a polish feature — not urgent mid-tournament. Good time to add it:
 - Before next season, when testing on a pre-tournament pool draw
 - Or on-demand if a parent group chat scenario comes up again where tiebreaker
   context would have changed what they looked at
+
+---
+
+## ⚠️ Format-dependent features — DON'T "fix" these away on small events
+
+> **Context (June 27, 2026):** Several of the best features only appear when the
+> tournament data supports them. When testing next year — especially on a small
+> or early/pre-publish event — many of these sections will be **empty or hidden.
+> That is correct, gated behavior, not a bug.** Do not loosen the gates to make
+> them show on a small event; you'll break them (or make them lie) on the big
+> multi-stage tournaments they were built for.
+
+Which feature needs what:
+
+| Feature | Requires | On a small/early event |
+| --- | --- | --- |
+| **Projected Path** (win/lose tree to a division) | A multi-stage format where pools feed brackets and brackets feed divisions via "Winner of / Loser of …" refs (e.g. Challenge → Gold/Silver). Resolved from `advances` + `poolRankToBracket`. | Shallow or absent. A single-bracket event has nothing to chain. |
+| **Challenge Rounds** section | Intermediate brackets with no final finish range (Challenge/Crossover). | Hidden (there are none). |
+| **Starting Seeds** | AES publishing seeds in pool `TeamText` as `Name (LOC) (N)`. | Empty state ("No starting seeds published"). Many regionals never publish them. |
+| **Predicted next-round opponents** (folded into Projected Path) | A re-pooling format (multiple pool rounds), where the next pool's `TeamText` references this round. | No "vs …" line — next step is a bracket, not a pool. |
+| **Bracket Play / "Your bracket"** | Published bracket plays for the division. | Hidden until brackets exist. |
+| **Final Standings** | Completed final-day brackets with RankText. | "Comes at end of tournament" gate. |
+| **Court Play / Division Pool Play** | Pools with `Courts` / `Teams`. | Present on almost any event with pools. |
+| **Pool ranking scenarios** | Any pool. | Works everywhere. |
+
+Also remember the two data-lifecycle gotchas that make live-only features look
+"broken" on a finished or not-yet-started event:
+
+- **Seeds and bracket feed refs are overwritten** with real team names once
+  brackets populate — so on a *completed* event the Projected Path and Starting
+  Seeds will be empty even though they worked live. (This is why those are
+  in-progress-only.)
+- **Before a pool plays, everyone is 0-0**, so rank is just seed/slot order. The
+  Projected Path intentionally shows nothing as favored and hides the per-rank
+  team/tiebreaker until a match is played.
+
+Bottom line for next year: validate format-dependent features on a **live,
+multi-stage event** (or a saved one mid-bracket), not on a small single-bracket
+draw. The regression smoke list in `docs/REGRESSION-EVENTS.md` covers the formats.

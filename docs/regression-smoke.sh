@@ -16,6 +16,7 @@ EVENTS=(
   "FAST Pre Nat'ls 14U |PTAwMDAwNDI0NjU90|203128|g14askyl1ls"
   "AAU 12 Classic CTX  |PTAwMDAwNDUwMjY90|213733|g12ctxjr1ls"
   "USAV 14 USA (Royal) |PTAwMDAwNDIwNjI90|200800|g14askyl1ls"
+  "USAV 14 Amer (Roots)|PTAwMDAwNDIwNjI90|200821|g14roots1ls"
 )
 
 for row in "${EVENTS[@]}"; do
@@ -31,6 +32,15 @@ names=[p['poolName'] for p in d.get('pools',[])]
 dup='  !!DUP POOL!!' if len(names)!=len(set(names)) else ''
 repool=sum(1 for f in d.get('futurePaths',[]) if f.get('nextType')=='pool')
 rp=f' repoolPred={repool}' if repool else ''
-print(f'{label:22} pools={len(names)} {names} totalTeams={d.get(\"totalTeams\")} final={len(d.get(\"finalStandings\",[]))}{rp}{dup}')
+# Projected-path health: top-level branches and distinct division leaves reached
+proj=d.get('projection'); divs=set()
+if proj:
+    stack=[proj]
+    while stack:
+        n=stack.pop()
+        if n.get('kind')=='division': divs.add(n.get('name','').strip())
+        stack+=[b['node'] for b in n.get('branches',[])]
+pj=f' proj={len(proj[\"branches\"])}br/{len(divs)}div' if proj else ''
+print(f'{label:22} pools={len(names)} {names} totalTeams={d.get(\"totalTeams\")} final={len(d.get(\"finalStandings\",[]))}{rp}{pj}{dup}')
 "
 done
