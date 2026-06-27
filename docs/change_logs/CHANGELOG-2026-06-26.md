@@ -74,11 +74,50 @@ round). Predicted Next Round's unique value was the **next-round opponents**.
 
 Files: `app/page.tsx`.
 
+## 5. Division Pool Play: stack pool name and courts
+
+In a pool card header the round name and the court list shared one line, so a
+long court list (many courts) squeezed/overlapped the name. Put the name on its
+own line with the courts wrapping below it.
+
+Files: `app/page.tsx`.
+
+## 6. Projected Path: don't favor a finish before the pool starts
+
+When the current pool hasn't played yet, every team is 0-0 and the projected
+"rank" is just seed/slot order — so flagging a line "On track now" implied a
+prediction that hadn't begun.
+
+- Until any match in the pool is played: highlight nothing, leave rows collapsed,
+  and show a note ("Prediction hasn't started — your pool is still 0-0…").
+- Once play starts, the current line highlights/expands as before. Detected from
+  whether any team in the pool has a non-zero record.
+
+Files: `app/page.tsx`.
+
+## 7. Pool ranking scenarios ("what it takes to place")
+
+A popup on each Pool Standings card summarizing what record yields each finish —
+the kind of thing a parent group chat asks the night before.
+
+- New **📊 "What it takes to place"** button on the focus team's pool card opens a
+  modal with 1st/2nd/3rd… scenarios, the AES tiebreaker order, and a bottom line.
+- **Deterministic** (no API/key/cost): round-robin assumption (N teams → N-1
+  matches each), placement ≈ N − wins, with set W-L / point differential called
+  out as the real tiebreakers. Shows only still-reachable records, so it narrows
+  as the pool plays out; shows the final result once a pool completes.
+- Adapts to pool size: a 3-team pool → 2-0 / 1-1 / 0-2; a 6-team pool → the full
+  5-0 … 0-5 ladder.
+
+Files: `app/page.tsx`.
+
 ---
 
 ## Verified
 
 - `npx tsc --noEmit` clean; `npm run build` succeeds.
+- Pool scenarios for Austin Skyline's 3-team Round 2 pool render 1st=2-0,
+  2nd=1-1, 3rd=0-2, matching a hand-written example.
 - Roots 14-1 Green (`200821`): 3-0 → **rank 1**, `currentProjectedRank=1`;
   standings ordered 3-0, 3-0, 2-1, 1-2, 0-3, 0-3.
 - USAV 14s pool-day ordering: Thu pool → Thu/Fri matches → Sat pool → Sat matches.

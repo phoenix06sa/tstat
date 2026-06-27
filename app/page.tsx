@@ -142,6 +142,86 @@ function SetScores({ sets, hasScores, eventComplete }: { sets: SetScore[]; hasSc
   );
 }
 
+// Deterministic "what it takes" ranking scenarios for the focus team's pool.
+// Round-robin assumption: each of N teams plays N-1 matches. Placement is by
+// match wins (place ≈ N - wins), with set W-L / point differential noted as the
+// real tiebreakers. Only the still-reachable final records are shown, so the
+// scenarios narrow as the pool plays out.
+function poolScenarios(pool: PoolInfo) {
+  const teams = pool.standings;
+  const N = teams.length;
+  const matchesEach = Math.max(1, N - 1);
+  const us = teams.find(t => t.isUs);
+  const opponents = teams.filter(t => !t.isUs).map(t => t.teamName);
+  const cw = us?.matchesWon ?? 0;
+  const cl = us?.matchesLost ?? 0;
+  const remaining = Math.max(0, matchesEach - (cw + cl));
+  const complete = remaining === 0;
+  const medal = (p: number) => p === 1 ? '🥇 1st' : p === 2 ? '🥈 2nd' : p === 3 ? '🥉 3rd' : `${p}th`;
+
+  const rows: { place: string; condition: string; note: string }[] = [];
+  for (let fw = cw + remaining; fw >= cw; fw--) {
+    const place = Math.min(N, Math.max(1, N - fw));
+    const record = `${fw}-${matchesEach - fw}`;
+    let condition: string;
+    if (fw === cw + remaining) condition = remaining === matchesEach ? `Win all ${matchesEach} (${record})` : `Win your ${remaining} remaining (${record})`;
+    else if (fw === cw) condition = remaining === matchesEach ? `Lose all ${matchesEach} (${record})` : `Lose your ${remaining} remaining (${record})`;
+    else condition = `Go ${record} (win ${fw - cw} of ${remaining} left)`;
+    let note = 'Decided by set W-L, then point differential, among teams at this record.';
+    if (place === 1) note = 'If another team also reaches this, set W-L then point differential decide — sweeping sets is safest.';
+    else if (place === N) note = 'Escape last only on set/point differential vs another team at this record.';
+    rows.push({ place: medal(place), condition, note });
+  }
+  const bottomLine = `Win out → ~${medal(Math.min(N, Math.max(1, N - (cw + remaining))))}; lose out → ~${medal(Math.min(N, N - cw))}.`;
+  return { poolName: pool.poolName, teamName: us?.teamName ?? 'Your team', opponents, N, matchesEach, cw, cl, remaining, complete, finishText: us?.finishRankText || '', rows, bottomLine };
+}
+
+function ScenarioModal({ pool, onClose }: { pool: PoolInfo; onClose: () => void }) {
+  const s = poolScenarios(pool);
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center sm:p-4" onClick={onClose}>
+      <div className="bg-zinc-900 border border-zinc-700 rounded-t-2xl sm:rounded-2xl w-full max-w-md max-h-[88vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="sticky top-0 bg-zinc-900 border-b border-zinc-700 px-4 py-3 flex items-center justify-between">
+          <div className="font-bold text-white text-sm">Pool Ranking Scenarios</div>
+          <button onClick={onClose} className="text-zinc-400 hover:text-zinc-200 text-lg leading-none px-2">✕</button>
+        </div>
+        <div className="px-4 py-3 space-y-3">
+          <div>
+            <div className="text-yellow-300 font-semibold">{s.teamName}</div>
+            <div className="text-zinc-400 text-xs mt-0.5">{s.poolName} · {s.N} teams, {s.matchesEach} match{s.matchesEach === 1 ? '' : 'es'} each</div>
+            {s.opponents.length > 0 && <div className="text-zinc-500 text-xs mt-0.5">vs {s.opponents.join(' · ')}</div>}
+            {(s.cw + s.cl) > 0 && !s.complete && <div className="text-zinc-300 text-xs mt-1">Currently {s.cw}-{s.cl}, {s.remaining} to play</div>}
+          </div>
+          {s.complete ? (
+            <div className="bg-zinc-800/50 rounded-lg px-3 py-2 text-sm text-zinc-300">
+              Pool complete — you finished {s.finishText || `${s.cw}-${s.cl}`}.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {s.rows.map((r, i) => (
+                <div key={i} className="bg-zinc-800/40 rounded-lg px-3 py-2">
+                  <div className="text-sm font-semibold text-white">{r.place} — {r.condition}</div>
+                  <div className="text-xs text-zinc-400 mt-0.5">{r.note}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div>
+            <div className="text-xs text-zinc-400 uppercase tracking-wider mb-1">Tiebreakers (AES order)</div>
+            <ol className="text-xs text-zinc-300 list-decimal list-inside space-y-0.5">
+              <li>Match W-L record</li>
+              <li>Set W-L record</li>
+              <li>Point differential</li>
+              <li>Head-to-head result</li>
+            </ol>
+          </div>
+          {!s.complete && <div className="text-xs text-zinc-400 border-t border-zinc-800 pt-2">{s.bottomLine}</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface SavedTournament {
   eventId: string;
   divisionId: string;
@@ -208,6 +288,8 @@ function HomeContent() {
   // Which top-level finish rows of the projected path are expanded.
   const [expandedRanks, setExpandedRanks] = useState<Set<number>>(new Set());
   const projInit = useRef(false);
+  // Pool whose ranking-scenarios popup is open (null = closed).
+  const [scenarioPool, setScenarioPool] = useState<PoolInfo | null>(null);
 
   // Load saved tournaments list from localStorage
   useEffect(() => {
@@ -794,6 +876,14 @@ function HomeContent() {
                     </div>
                     <div className="text-zinc-300 text-sm mt-0.5">{pool.poolName}</div>
                     <div className="text-zinc-500 text-xs">{pool.poolCourt}</div>
+                    {pool.standings.some(s => s.isUs) && (
+                      <button
+                        onClick={() => setScenarioPool(pool)}
+                        className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-yellow-300 bg-yellow-900/30 hover:bg-yellow-900/50 border border-yellow-800/50 rounded-lg px-2.5 py-1.5 transition-colors"
+                      >
+                        📊 What it takes to place
+                      </button>
+                    )}
                   </div>
                   <table className="w-full text-sm">
                     <thead>
@@ -1457,6 +1547,8 @@ function HomeContent() {
           </>
         )}
       </div>
+
+      {scenarioPool && <ScenarioModal pool={scenarioPool} onClose={() => setScenarioPool(null)} />}
     </div>
   );
 }
