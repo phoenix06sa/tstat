@@ -99,6 +99,20 @@ center instead of buried in chronological order.
 
 Files: `app/page.tsx`.
 
+## 6. Order bracket matches by match number within each round
+
+In some brackets Match 2 showed before Match 1. The predicted bracket trees
+pushed matches in tree-walk order (TopSource-first recursion), and the live
+scored view sorted within a round by scheduled time — neither tracked AES's
+match numbering.
+
+- Sort each round's matches by match number (parsed from the match name); the
+  live view keeps scheduled time as a fallback.
+- Verified on the divisions: Gold reads Quarters 1–4 → Semis 5–6 → Final 7;
+  Silver/Bronze/Flights read Semis 1–2 → Final 3.
+
+Files: `lib/tournament/bracket-paths.ts`, `lib/tournament/active-bracket.ts`.
+
 ---
 
 ## Verified
