@@ -386,10 +386,12 @@ function PoolDaysSection({ data, part, onScenario }: {
   const now = new Date();
   const todayKey = now.getMonth() * 100 + now.getDate();
   const dayKeys = [...poolsSorted.map(p => dateKey(p.date)), ...sortedDates.map(dateKey)].filter(k => k >= 0);
-  const within = dayKeys.length > 0 && todayKey >= Math.min(...dayKeys) && todayKey <= Math.max(...dayKeys);
-  let currentIdx = -1;
-  poolsSorted.forEach((p, i) => { const k = dateKey(p.date); if (k >= 0 && k <= todayKey) currentIdx = i; });
-  const pinToday = !data.eventComplete && within && currentIdx >= 0;
+  // Pin "today" whenever the tournament has started and isn't complete. The end
+  // is the eventComplete flag — NOT the last pool day — so the final bracket-only
+  // day (no new pool) still counts as today and reverts to chronological only
+  // once the event is actually over.
+  const started = dayKeys.length > 0 && todayKey >= Math.min(...dayKeys);
+  const pinToday = !data.eventComplete && started;
 
   if (!pinToday) {
     // Not live: chronological. primary renders everything; earlier renders nothing.
@@ -397,9 +399,11 @@ function PoolDaysSection({ data, part, onScenario }: {
     return <>{poolsSorted.map(renderPool)}{safetyNet}</>;
   }
 
-  // current round + any future rounds (chronological), and past rounds below
-  const todayAndFuture = poolsSorted.map((_, i) => i).filter(i => i >= currentIdx);
-  const earlier = poolsSorted.map((_, i) => i).filter(i => i < currentIdx)
+  // Pools dated today or later (and any date-less pool) go up top; past pools
+  // drop below, most-recent first. On a bracket-only day every pool is "earlier",
+  // so the top section is just the Today banner above Bracket Play.
+  const todayAndFuture = poolsSorted.map((_, i) => i).filter(i => { const k = dateKey(poolsSorted[i].date); return k < 0 || k >= todayKey; });
+  const earlier = poolsSorted.map((_, i) => i).filter(i => { const k = dateKey(poolsSorted[i].date); return k >= 0 && k < todayKey; })
     .sort((a, b) => dateKey(poolsSorted[b].date) - dateKey(poolsSorted[a].date));
 
   if (part === 'earlier') {
@@ -424,7 +428,9 @@ function PoolDaysSection({ data, part, onScenario }: {
           <span className="text-xs text-zinc-500">{todayLabel}</span>
           <div className="h-px flex-1 bg-emerald-900/60" />
         </div>
-        <div className="space-y-6">{todayAndFuture.map(i => renderPool(poolsSorted[i], i))}</div>
+        {todayAndFuture.length > 0 && (
+          <div className="space-y-6">{todayAndFuture.map(i => renderPool(poolsSorted[i], i))}</div>
+        )}
       </div>
       {safetyNet}
     </>
@@ -775,8 +781,12 @@ function HomeContent() {
     window.history.pushState({ trackerView: v }, '');
   }
   function backToHub() {
-    // Pop the pushed entry; the popstate handler restores the hub view.
-    window.history.back();
+    // Set the view directly so the button always works even if browser history
+    // got out of sync (e.g. after an auto-reload), then unwind the pushed entry
+    // so the device back/forward stays consistent.
+    const hasPushed = !!(window.history.state as { trackerView?: View } | null)?.trackerView;
+    setView('hub');
+    if (hasPushed) window.history.back();
   }
 
   // Keep the view in sync with browser history so back/forward works.
@@ -1057,9 +1067,9 @@ function HomeContent() {
         {view !== 'hub' && (
           <button
             onClick={backToHub}
-            className="text-zinc-400 hover:text-zinc-200 text-sm flex items-center gap-1"
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-zinc-100 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-lg px-3.5 py-2 transition-colors shadow-sm"
           >
-            ← Home
+            <span className="text-base leading-none">←</span> Home
           </button>
         )}
 
