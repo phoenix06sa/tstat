@@ -77,6 +77,23 @@ empty via the fallback.
 
 Files: `app/api/tournament/route.ts`.
 
+## 5. Surface TODAY's round to the top while a tournament is live
+
+All days still live on one page, but during the event the current round is now
+front and center instead of buried in chronological order.
+
+- While the real date falls within the event (and it's not complete): the
+  **current round** (latest pool on/before today, plus its match days) renders at
+  the top under a **🟢 Today · {weekday, date}** banner; earlier rounds go below an
+  **"Earlier days"** divider, most-recent-first.
+- Once it's over (or before it starts): normal **first → last** chronological
+  order, no banner — so opening a finished tournament later reads top-to-bottom as
+  before.
+- "Today" = the current round (robust: your active round shows even before the
+  day's matches post), detected from the device date vs. the pool/match day keys.
+
+Files: `app/page.tsx`.
+
 ---
 
 ## Verified
@@ -85,6 +102,9 @@ Files: `app/api/tournament/route.ts`.
 - `bash docs/regression-smoke.sh`: all 9 rows OK, no duplicate pools; both USAV
   divisions now `totalTeams=48` (was 0); completed events unchanged
   (AAU 131/131, LSR 64/64, etc.).
+- Today-pinning (machine date Sat Jun 27): pins Round 2 (Sat) on top, Round 1
+  (Thu/Fri) under "Earlier days"; completed/future events fall back to
+  chronological.
 - Projected Path for Austin Skyline's not-yet-started pool shows no team pinned to
   a finish and no "(N/A)" tiebreaker; reverts to full detail once a match is
   played.

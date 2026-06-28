@@ -960,20 +960,64 @@ function HomeContent() {
                     </div>
                   );
                 };
+                const renderPool = (pool: PoolInfo, pi: number) => {
+                  const dl = splitDateLabel(pool.date, year);
+                  const dates = (ownedDates.get(pi) || []).sort((a, b) => dateKey(a) - dateKey(b));
+                  return (
+                    <div key={pi} className="space-y-3">
+                      {standingsTable(pool, dl)}
+                      {dates.map(matchGroup)}
+                    </div>
+                  );
+                };
+                const safetyNet = sortedDates.filter(d => !owned.has(d)).map(matchGroup);
+
+                // While the tournament is live (today falls within its days), pull
+                // the current round to the top under a TODAY banner with earlier
+                // rounds below (most-recent-first). Once it's over (or before it
+                // starts) render days in normal first→last order.
+                const now = new Date();
+                const todayKey = now.getMonth() * 100 + now.getDate();
+                const dayKeys = [...poolsSorted.map(p => dateKey(p.date)), ...sortedDates.map(dateKey)].filter(k => k >= 0);
+                const within = dayKeys.length > 0 && todayKey >= Math.min(...dayKeys) && todayKey <= Math.max(...dayKeys);
+                let currentIdx = -1;
+                poolsSorted.forEach((p, i) => { const k = dateKey(p.date); if (k >= 0 && k <= todayKey) currentIdx = i; });
+                const pinToday = !data.eventComplete && within && currentIdx >= 0;
+
+                if (pinToday) {
+                  const earlier = poolsSorted.map((_, i) => i)
+                    .filter(i => i !== currentIdx)
+                    .sort((a, b) => dateKey(poolsSorted[b].date) - dateKey(poolsSorted[a].date));
+                  const todayLabel = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+                  return (
+                    <>
+                      <div>
+                        <div className="flex items-center gap-2 px-1 mb-3">
+                          <span className="text-xs font-bold uppercase tracking-widest text-emerald-400">🟢 Today</span>
+                          <span className="text-xs text-zinc-500">{todayLabel}</span>
+                          <div className="h-px flex-1 bg-emerald-900/60" />
+                        </div>
+                        {renderPool(poolsSorted[currentIdx], currentIdx)}
+                      </div>
+                      {earlier.length > 0 && (
+                        <div>
+                          <div className="flex items-center gap-2 px-1 mb-3">
+                            <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">Earlier days</span>
+                            <div className="h-px flex-1 bg-zinc-800" />
+                          </div>
+                          <div className="space-y-6">
+                            {earlier.map(i => renderPool(poolsSorted[i], i))}
+                          </div>
+                        </div>
+                      )}
+                      {safetyNet}
+                    </>
+                  );
+                }
                 return (
                   <>
-                    {poolsSorted.map((pool, pi) => {
-                      const dl = splitDateLabel(pool.date, year);
-                      const dates = (ownedDates.get(pi) || []).sort((a, b) => dateKey(a) - dateKey(b));
-                      return (
-                        <div key={pi} className="space-y-3">
-                          {standingsTable(pool, dl)}
-                          {dates.map(matchGroup)}
-                        </div>
-                      );
-                    })}
-                    {/* Safety net: match days no pool owned (e.g. no pools at all) */}
-                    {sortedDates.filter(d => !owned.has(d)).map(matchGroup)}
+                    {poolsSorted.map(renderPool)}
+                    {safetyNet}
                   </>
                 );
               })();
