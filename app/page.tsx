@@ -462,6 +462,12 @@ interface DivisionData {
   event: string; poolPlayComplete: boolean;
   pools: DivisionPool[]; seeds: DivisionSeed[]; courts: DivisionCourt[];
 }
+interface CourtMatch {
+  matchId: number; date: string; start: string; time: string; court: string; play: string;
+  team1: string; team2: string; team1Id: number | null; team2Id: number | null;
+  hasScores: boolean; scoreText: string;
+}
+interface CourtSchedule { event: string; days: string[]; courts: string[]; matches: CourtMatch[] }
 
 export default function Home() {
   return (
@@ -493,7 +499,12 @@ function HomeContent() {
   // Division-wide data for the pools/seeds/courts views (lazy-loaded)
   const [divisionData, setDivisionData] = useState<DivisionData | null>(null);
   const [divisionLoading, setDivisionLoading] = useState(false);
-  const [selectedCourt, setSelectedCourt] = useState<string | null>(null);
+  // Court Play schedule (per-court, per-day match list)
+  const [courtSched, setCourtSched] = useState<CourtSchedule | null>(null);
+  const [courtSchedLoading, setCourtSchedLoading] = useState(false);
+  const [schedDay, setSchedDay] = useState('');
+  const [schedCourt, setSchedCourt] = useState(''); // '' = all courts
+  const courtInit = useRef(false);
   // Which top-level finish rows of the projected path are expanded.
   const [expandedRanks, setExpandedRanks] = useState<Set<number>>(new Set());
   const projInit = useRef(false);
@@ -651,7 +662,7 @@ function HomeContent() {
     }
   }, [config]);
 
-  const onDivisionView = view === 'pools' || view === 'seeds' || view === 'courts';
+  const onDivisionView = view === 'pools' || view === 'seeds';
   // Load once when a division view first opens…
   useEffect(() => {
     if (onDivisionView && config && !divisionData && !divisionLoading) fetchDivision();
@@ -662,8 +673,45 @@ function HomeContent() {
     const id = setInterval(() => fetchDivision(), 90_000);
     return () => clearInterval(id);
   }, [onDivisionView, config, fetchDivision]);
+
+  // Court Play schedule — aggregates every team's schedule, so it's its own
+  // (heavier) fetch, lazy-loaded when the Court Play view opens.
+  const fetchCourtSched = useCallback(async () => {
+    if (!config) return;
+    setCourtSchedLoading(true);
+    try {
+      const res = await fetch(`/api/court-schedule?event=${config.eventId}&division=${config.divisionId}&t=${Date.now()}`);
+      const json = await res.json();
+      if (!json.error) setCourtSched(json);
+    } catch { /* ignore */ } finally {
+      setCourtSchedLoading(false);
+    }
+  }, [config]);
+  useEffect(() => {
+    if (view === 'courts' && config && !courtSched && !courtSchedLoading) fetchCourtSched();
+  }, [view, config, courtSched, courtSchedLoading, fetchCourtSched]);
+  useEffect(() => {
+    if (view !== 'courts' || !config) return;
+    const id = setInterval(() => fetchCourtSched(), 90_000);
+    return () => clearInterval(id);
+  }, [view, config, fetchCourtSched]);
+
+  // Default the Court Play day to today (if in range) and the court to where our
+  // team plays that day — once, when the schedule first loads.
+  useEffect(() => {
+    if (!courtSched || courtInit.current || courtSched.days.length === 0) return;
+    courtInit.current = true;
+    const todayIso = (() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`; })();
+    const day = courtSched.days.includes(todayIso) ? todayIso : courtSched.days[courtSched.days.length - 1];
+    setSchedDay(day);
+    const tid = data?.teamId;
+    const teamName = (data?.team || '').toLowerCase();
+    const ourMatch = courtSched.matches.find(m => m.date === day && (
+      (tid != null && (String(m.team1Id) === String(tid) || String(m.team2Id) === String(tid))) ||
+      m.team1.toLowerCase() === teamName || m.team2.toLowerCase() === teamName));
+    setSchedCourt(ourMatch ? ourMatch.court : '');
+  }, [courtSched, data]);
   // Court drill-down is per-visit; reset it when leaving the courts view.
-  useEffect(() => { if (view !== 'courts') setSelectedCourt(null); }, [view]);
 
   // Default the projected-path tree to the team's current line, once per team —
   // but only once the pool has started (before that the rank is just seed order,
@@ -713,6 +761,7 @@ function HomeContent() {
     localStorage.setItem('tracker_defaultTeam', code);
     setData(null);
     projInit.current = false; // re-default the projected path for the new team
+    courtInit.current = false; // re-default the Court Play court for the new team
   }
 
   function handleReconfigure() {
@@ -749,7 +798,9 @@ function HomeContent() {
     setSelectedTeam(t.teamCode);
     setData(null);
     setDivisionData(null); // division-wide data is event/division specific
+    setCourtSched(null);
     projInit.current = false;
+    courtInit.current = false;
     setShowTournamentSwitcher(false);
   }
 
@@ -1538,60 +1589,65 @@ function HomeContent() {
           </>
         )}
 
-        {/* Court Play view — list floors, drill into one to see its teams */}
+        {/* Court Play view — per-court, per-day match schedule (our division) */}
         {view === 'courts' && (
           <>
-            {divisionLoading && !divisionData && (
-              <div className="flex items-center justify-center py-20 text-zinc-400">Loading courts…</div>
+            {courtSchedLoading && !courtSched && (
+              <div className="flex items-center justify-center py-20 text-zinc-400">Loading court schedule…</div>
             )}
-            {divisionData && !selectedCourt && (
-              <div>
-                <div className="text-xs text-zinc-400 uppercase tracking-widest mb-1 px-1">Court Play</div>
-                <div className="text-xs text-zinc-500 mb-3 px-1">Tap a floor to see which teams play there</div>
-                {divisionData.courts.length === 0 ? (
-                  <div className="bg-zinc-900 rounded-xl border border-zinc-700 p-6 text-center text-zinc-400 text-sm">No court assignments published yet.</div>
-                ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {divisionData.courts.map(c => {
-                      // Mark the floor(s) where the focus team is scheduled
-                      const hasUs = !!selectedTeam && c.entries.some(e => e.teams.some(t => t.teamCode.toLowerCase() === selectedTeam.toLowerCase()));
-                      return (
-                        <button key={c.name} onClick={() => setSelectedCourt(c.name)}
-                          className={`rounded-lg px-3 py-3 text-left border transition-colors ${hasUs ? 'bg-yellow-950/40 border-yellow-800/60 hover:border-yellow-700' : 'bg-zinc-900 border-zinc-700 hover:bg-zinc-800 hover:border-zinc-600'}`}>
-                          <div className={`text-sm font-semibold ${hasUs ? 'text-yellow-300' : 'text-white'}`}>{c.name}</div>
-                          <div className="text-xs text-zinc-500">{hasUs ? 'Your team plays here' : `${c.entries.length} pool${c.entries.length === 1 ? '' : 's'}`}</div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+            {courtSched && courtSched.matches.length === 0 && (
+              <div className="bg-zinc-900 rounded-xl border border-zinc-700 p-6 text-center text-zinc-400 text-sm">No scheduled matches published yet.</div>
             )}
-            {divisionData && selectedCourt && (() => {
-              const court = divisionData.courts.find(c => c.name === selectedCourt);
+            {courtSched && courtSched.matches.length > 0 && (() => {
+              const dayLabel = (iso: string) => new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+              const tid = data?.teamId;
+              const ourName = (data?.team || '').toLowerCase();
+              const t1Us = (m: CourtMatch) => (tid != null && String(m.team1Id) === String(tid)) || m.team1.toLowerCase() === ourName;
+              const t2Us = (m: CourtMatch) => (tid != null && String(m.team2Id) === String(tid)) || m.team2.toLowerCase() === ourName;
+              const dayMatches = courtSched.matches.filter(m => m.date === schedDay);
+              const courtsForDay = [...new Set(dayMatches.map(m => m.court))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+              const effectiveCourt = schedCourt && courtsForDay.includes(schedCourt) ? schedCourt : '';
+              const shown = (effectiveCourt ? dayMatches.filter(m => m.court === effectiveCourt) : dayMatches)
+                .slice().sort((a, b) => a.start.localeCompare(b.start) || a.court.localeCompare(b.court, undefined, { numeric: true }));
               return (
-                <div className="space-y-3">
-                  <button onClick={() => setSelectedCourt(null)} className="text-zinc-400 hover:text-zinc-200 text-sm">← All courts</button>
-                  <div className="text-lg font-bold text-white px-1">{selectedCourt}</div>
-                  {court?.entries.map((e, ei) => (
-                    <div key={ei} className="bg-zinc-900 rounded-xl border border-zinc-700 overflow-hidden">
-                      <div className="px-3 py-2 border-b border-zinc-700 flex items-center justify-between gap-2">
-                        <span className="text-sm font-semibold text-white truncate">{e.poolName}</span>
-                        <span className="text-xs text-zinc-500 shrink-0">{e.date}{e.complete ? ' · done' : ''}</span>
-                      </div>
-                      <div className="divide-y divide-zinc-800">
-                        {e.teams.map((t, ti) => {
-                          const isUs = !!selectedTeam && t.teamCode.toLowerCase() === selectedTeam.toLowerCase();
-                          return (
-                            <div key={ti} className={`px-3 py-2 flex items-center justify-between gap-2 ${isUs ? 'bg-yellow-950/40' : ''}`}>
-                              <span className={`text-sm ${isUs ? 'text-yellow-300 font-medium' : 'text-zinc-200'}`}>{t.teamName}</span>
-                              <span className="text-zinc-600 text-xs">{t.teamCode}</span>
+                <div>
+                  <div className="text-xs text-zinc-400 uppercase tracking-widest mb-1 px-1">Court Play</div>
+                  <div className="text-xs text-zinc-500 mb-3 px-1">Match schedule by day &amp; court · your division</div>
+                  <div className="flex gap-2 mb-3">
+                    <select value={schedDay} onChange={e => { setSchedDay(e.target.value); }}
+                      className="flex-1 bg-zinc-800 border border-zinc-700 text-zinc-100 text-sm rounded-lg px-3 py-2 appearance-none focus:outline-none focus:border-yellow-500">
+                      {courtSched.days.map(d => <option key={d} value={d}>{dayLabel(d)}</option>)}
+                    </select>
+                    <select value={effectiveCourt} onChange={e => setSchedCourt(e.target.value)}
+                      className="flex-1 bg-zinc-800 border border-zinc-700 text-zinc-100 text-sm rounded-lg px-3 py-2 appearance-none focus:outline-none focus:border-yellow-500">
+                      <option value="">All courts</option>
+                      {courtsForDay.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  {shown.length === 0 ? (
+                    <div className="bg-zinc-900 rounded-xl border border-zinc-700 p-6 text-center text-zinc-400 text-sm">No matches scheduled here.</div>
+                  ) : (
+                    <div className="bg-zinc-900 rounded-xl border border-zinc-700 divide-y divide-zinc-800 overflow-hidden">
+                      {shown.map(m => {
+                        const us = t1Us(m) || t2Us(m);
+                        return (
+                          <div key={m.matchId} className={`px-3 py-2.5 ${us ? 'bg-yellow-950/40' : ''}`}>
+                            <div className="flex items-center gap-2 text-[11px] text-zinc-500 mb-0.5">
+                              <span className="font-mono text-zinc-400">{m.time}</span>
+                              {!effectiveCourt && <span className="text-zinc-400">{m.court}</span>}
+                              <span className="truncate">{m.play}</span>
+                              {m.hasScores && m.scoreText && <span className="ml-auto font-mono text-zinc-400 shrink-0">{m.scoreText}</span>}
                             </div>
-                          );
-                        })}
-                      </div>
+                            <div className="text-sm text-zinc-200">
+                              <span className={t1Us(m) ? 'text-yellow-300 font-semibold' : ''}>{m.team1}</span>
+                              <span className="text-zinc-500"> vs </span>
+                              <span className={t2Us(m) ? 'text-yellow-300 font-semibold' : ''}>{m.team2}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                  ))}
+                  )}
                 </div>
               );
             })()}

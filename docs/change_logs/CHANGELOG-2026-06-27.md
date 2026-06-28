@@ -113,6 +113,29 @@ match numbering.
 
 Files: `lib/tournament/bracket-paths.ts`, `lib/tournament/active-bracket.ts`.
 
+## 7. Court Play: real per-court, per-day match schedule
+
+Rebuilt Court Play from "court → pools → teams" into AES's court-schedule view:
+pick a **day** and a **court**, see the **time-ordered match list** (both teams,
+times, scores), scoped to our division.
+
+- New `/api/court-schedule` endpoint. AES's plays endpoint only carries the
+  bracket match grid (not pool matches), so it **aggregates every team's
+  schedule** (which carries court + time + both teams for pool *and* bracket
+  matches) and de-dupes by `MatchId` — then merges in bracket matches from plays
+  to include future, not-yet-assigned slots ("Winner of Match 1 vs …").
+- UI: day picker (defaults to today if in range) + court picker (defaults to the
+  court our team plays that day; "All courts" shows the whole day). Our team's
+  matches are highlighted. Lazy-loaded when the view opens, 90s refresh.
+- Scope = **our division** (version "B"). The literal AES view mixes every
+  division on a floor; that whole-court view would mean fetching all divisions
+  per day (a later option). Cost note: ~one request per team (cached), so the
+  first cold load on a big division takes a beat.
+- Verified: court 67 ICC on 2026-06-28 reproduces the real schedule
+  (Silver A Match 1/2/3, incl. the future "Winner of M1 vs M2" slot).
+
+Files: `app/api/court-schedule/route.ts` (new), `app/page.tsx`.
+
 ---
 
 ## Verified
