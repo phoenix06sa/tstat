@@ -162,17 +162,22 @@ function buildBracketViewFromPlay(bracketPlay: any, teamCode: string, bracketFin
     return `Round of ${Math.pow(2, stagesFromFinal + 1)}`;
   };
 
+  // Order matches within a round by match number ("Match 1" before "Match 2"),
+  // falling back to scheduled time.
+  const mnum = (name: string) => { const x = (name || '').match(/(\d+)/); return x ? parseInt(x[1]) : 0; };
+  const byMatchNo = (a: { matchName: string; time: string }, b: { matchName: string; time: string }) =>
+    mnum(a.matchName) - mnum(b.matchName) || a.time.localeCompare(b.time);
+
   const winnersRounds = winnersLadder.map((mids, idx) => ({
     label: stageLabels(winnersLadder.length, idx),
     isChampPath: true,
-    matches: mids.map((mid: number) => allMatches[mid]).filter(Boolean)
-      .sort((a: { time: string }, b: { time: string }) => a.time.localeCompare(b.time)),
+    matches: mids.map((mid: number) => allMatches[mid]).filter(Boolean).sort(byMatchNo),
   }));
 
   const champMatchIds = new Set(winnersLadder.flat());
   const placementMatches = Object.values(allMatches)
     .filter((m: { matchId: number }) => !champMatchIds.has(m.matchId))
-    .sort((a: { time: string }, b: { time: string }) => a.time.localeCompare(b.time));
+    .sort(byMatchNo);
 
   // Earliest scheduled match = when the bracket actually starts (the root is
   // the final, which is the LAST match — using it gave the wrong start time)

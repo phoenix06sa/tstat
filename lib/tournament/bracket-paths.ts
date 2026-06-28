@@ -398,16 +398,20 @@ export function buildBracketPaths(input: BracketPathsInput): {
       return `Round of ${Math.pow(2, fromFinal + 1)}`;
     };
 
+    // Within a round, order by match number ("Match 1" before "Match 2") — the
+    // tree-walk order doesn't track AES's numbering.
+    const matchNum = (m: BracketRoundMatch) => { const x = (m.matchName || '').match(/(\d+)/); return x ? parseInt(x[1]) : 0; };
+
     // Championship rounds (deepest first = earliest round)
     for (let d = maxDepth; d >= 0; d--) {
-      const matches = (matchesByDepth[d] || []).filter(m => !m.isPlacement);
+      const matches = (matchesByDepth[d] || []).filter(m => !m.isPlacement).sort((a, b) => matchNum(a) - matchNum(b));
       if (matches.length > 0) {
         rounds.push({ label: roundNames(d), matches });
       }
     }
 
     // Placement matches
-    const placementMatches = Object.values(matchesByDepth).flat().filter(m => m.isPlacement);
+    const placementMatches = Object.values(matchesByDepth).flat().filter(m => m.isPlacement).sort((a, b) => matchNum(a) - matchNum(b));
     if (placementMatches.length > 0) {
       rounds.push({ label: 'Placement', matches: placementMatches });
     }
