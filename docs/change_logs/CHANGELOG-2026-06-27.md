@@ -77,17 +77,22 @@ empty via the fallback.
 
 Files: `app/api/tournament/route.ts`.
 
-## 5. Surface TODAY's round to the top while a tournament is live
+## 5. Surface TODAY + upcoming to the top; earlier days below Bracket Play
 
-All days still live on one page, but during the event the current round is now
-front and center instead of buried in chronological order.
+All days still live on one page, but during the event today's stuff is front and
+center instead of buried in chronological order.
 
 - While the real date falls within the event (and it's not complete): the
-  **current round** (latest pool on/before today, plus its match days) renders at
-  the top under a **🟢 Today · {weekday, date}** banner; earlier rounds go below an
+  **current round + any future rounds** render at the top under a
+  **🟢 Today & Upcoming · {weekday, date}** banner; past rounds drop below an
   **"Earlier days"** divider, most-recent-first.
+- **Bracket Play sits in the today/upcoming zone** — pool standings + matches for
+  today, then Projected Path and Bracket Play, then the *earlier* days below them
+  (not after everything). Implemented by extracting the pool-day rendering into a
+  `PoolDaysSection` component rendered twice: `part="primary"` at the top,
+  `part="earlier"` after Bracket Play.
 - Once it's over (or before it starts): normal **first → last** chronological
-  order, no banner — so opening a finished tournament later reads top-to-bottom as
+  order, no banner — opening a finished tournament later reads top-to-bottom as
   before.
 - "Today" = the current round (robust: your active round shows even before the
   day's matches post), detected from the device date vs. the pool/match day keys.

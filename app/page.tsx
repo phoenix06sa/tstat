@@ -222,6 +222,215 @@ function ScenarioModal({ pool, onClose }: { pool: PoolInfo; onClose: () => void 
   );
 }
 
+// Pool standings + matches for the tracker. While the tournament is live,
+// part="primary" shows today + upcoming rounds at the top under a banner, and
+// part="earlier" shows past rounds (rendered lower on the page, below Bracket
+// Play). When it's over / not started, primary renders all days first→last and
+// earlier renders nothing.
+function PoolDaysSection({ data, part, onScenario }: {
+  data: TournamentData;
+  part: 'primary' | 'earlier';
+  onScenario: (pool: PoolInfo) => void;
+}) {
+  const pools: PoolInfo[] = data.pools && data.pools.length > 0
+    ? data.pools
+    : data.poolStandings.length > 0
+      ? [{ poolName: data.poolName, poolCourt: data.poolCourt, date: '', standings: data.poolStandings }]
+      : [];
+
+  // Pool matches grouped by date (bracket matches live in Bracket Play)
+  const matchesByDate: Record<string, PoolMatch[]> = {};
+  for (const m of data.matches.filter(m => m.isPoolPlay)) {
+    const d = m.date || 'Date TBA';
+    if (!matchesByDate[d]) matchesByDate[d] = [];
+    matchesByDate[d].push(m);
+  }
+  const year = (data.dates.match(/\b(20\d{2})\b/) || [])[1] || '';
+  const monthNames = Object.keys(MONTHS);
+  const dateKey = (formatted: string): number => {
+    const mm = (formatted || '').match(/([A-Za-z]{3,})\s+(\d+)/);
+    if (!mm) return -1;
+    const mon = monthNames.indexOf(mm[1].slice(0, 3));
+    return mon < 0 ? -1 : mon * 100 + parseInt(mm[2]);
+  };
+
+  const matchCard = (m: PoolMatch, i: number) => (
+    <div key={i} className={`bg-zinc-900 rounded-xl border p-4 ${
+      m.weWon === true ? 'border-emerald-800' :
+      m.weWon === false ? 'border-red-900' : 'border-zinc-700'
+    }`}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <span className="text-xs text-zinc-400 font-mono">{m.matchName}</span>
+            <span className="text-xs text-zinc-500">{m.time}</span>
+            <span className="text-xs text-zinc-500">{m.court}</span>
+            {m.isPoolPlay && <span className="text-xs bg-blue-900/50 text-blue-300 px-1.5 py-0.5 rounded">Pool</span>}
+            {!m.isPoolPlay && <span className="text-xs bg-purple-900/50 text-purple-300 px-1.5 py-0.5 rounded">Bracket</span>}
+          </div>
+          {(m.opponent || '').trim()
+            ? <div className="font-semibold text-white text-base">vs {m.opponent}</div>
+            : <div className="font-semibold text-zinc-400 italic text-base">Opponent TBD</div>}
+          <SetScores sets={m.sets} hasScores={m.hasScores} eventComplete={data.eventComplete} />
+        </div>
+        {m.weWon !== null && (
+          <div className={`text-xs font-bold px-2 py-1 rounded shrink-0 ${m.weWon ? 'bg-emerald-900 text-emerald-300' : 'bg-red-900 text-red-300'}`}>
+            {m.weWon ? 'WIN' : 'LOSS'}
+          </div>
+        )}
+      </div>
+      {m.workTeam && <div className="mt-2 text-xs text-zinc-500 border-t border-zinc-700 pt-2">Work: {m.workTeam}</div>}
+    </div>
+  );
+
+  const standingsTable = (pool: PoolInfo, dl: { weekday: string; full: string }) => (
+    <div className="bg-zinc-900 rounded-xl border border-zinc-700 overflow-x-auto">
+      <div className="px-4 py-3 border-b border-zinc-700">
+        <div className="flex items-baseline justify-between gap-2">
+          <div className="text-base font-bold text-white">{dl.weekday ? `${dl.weekday}: ` : ''}Pool Standings</div>
+          {dl.full && <div className="text-xs text-zinc-400 shrink-0">{dl.full}</div>}
+        </div>
+        <div className="text-zinc-300 text-sm mt-0.5">{pool.poolName}</div>
+        <div className="text-zinc-500 text-xs">{pool.poolCourt}</div>
+        {pool.standings.some(s => s.isUs) && (
+          <button
+            onClick={() => onScenario(pool)}
+            className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-yellow-300 bg-yellow-900/30 hover:bg-yellow-900/50 border border-yellow-800/50 rounded-lg px-2.5 py-1.5 transition-colors"
+          >
+            📊 What it takes to place
+          </button>
+        )}
+      </div>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-zinc-400 text-xs border-b border-zinc-700">
+            <th className="text-left px-4 py-2">Team</th>
+            <th className="text-center px-2 py-2">M W-L</th>
+            <th className="text-center px-2 py-2">S W-L</th>
+            <th className="text-center px-2 py-2">Rank</th>
+          </tr>
+        </thead>
+        <tbody>
+          {pool.standings.map((s, i) => (
+            <tr key={i} className={`border-b border-zinc-700 last:border-0 ${s.isUs ? 'bg-yellow-950/40' : ''}`}>
+              <td className="px-4 py-3">
+                <div className={`font-medium ${s.isUs ? 'text-yellow-300' : 'text-zinc-200'}`}>
+                  {s.teamName}
+                </div>
+                <div className="text-zinc-500 text-xs">{s.teamCode}</div>
+                {s.tiebreaker && (s.matchesWon + s.matchesLost) > 0 && (
+                  <div className={`text-xs mt-0.5 ${s.isUs ? 'text-yellow-600' : 'text-zinc-500'}`}>
+                    ↑ {s.tiebreaker}
+                  </div>
+                )}
+              </td>
+              <td className="text-center px-2 py-3 text-zinc-300">{s.matchesWon}-{s.matchesLost}</td>
+              <td className="text-center px-2 py-3 text-zinc-300">{s.setsWon}-{s.setsLost}</td>
+              <td className="text-center px-2 py-3">
+                {s.finishRank ? (
+                  <span className={`rounded px-2 py-0.5 text-xs font-bold ${s.isUs ? 'bg-yellow-800 text-yellow-200' : 'bg-zinc-700 text-zinc-200'}`}>
+                    {s.finishRankText || `#${s.finishRank}`}
+                  </span>
+                ) : <span className="text-zinc-500 text-xs">—</span>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+
+  const poolsSorted = [...pools].sort((a, b) => dateKey(a.date) - dateKey(b.date));
+  const sortedDates = Object.keys(matchesByDate).sort((a, b) => dateKey(a) - dateKey(b));
+  // Each match day belongs to the latest pool round on/before it.
+  const ownerIndexFor = (d: string): number => {
+    if (poolsSorted.length <= 1) return poolsSorted.length - 1;
+    let idx = -1;
+    poolsSorted.forEach((p, i) => { if (p.date && dateKey(p.date) <= dateKey(d)) idx = i; });
+    return idx >= 0 ? idx : poolsSorted.findIndex(p => p.date);
+  };
+  const ownedDates = new Map<number, string[]>();
+  const owned = new Set<string>();
+  for (const d of sortedDates) {
+    const idx = ownerIndexFor(d);
+    if (idx < 0) continue;
+    if (!ownedDates.has(idx)) ownedDates.set(idx, []);
+    ownedDates.get(idx)!.push(d);
+    owned.add(d);
+  }
+  const matchGroup = (d: string) => {
+    const ddl = splitDateLabel(d, year);
+    return (
+      <div key={d} className="space-y-3">
+        <div className="flex items-baseline justify-between gap-2 px-1">
+          <div className="text-base font-bold text-white">{ddl.weekday ? `${ddl.weekday}: ` : ''}Matches</div>
+          {(ddl.full || d) && <div className="text-xs text-zinc-400 shrink-0">{ddl.full || d}</div>}
+        </div>
+        {matchesByDate[d].map(matchCard)}
+      </div>
+    );
+  };
+  const renderPool = (pool: PoolInfo, pi: number) => {
+    const dl = splitDateLabel(pool.date, year);
+    const dates = (ownedDates.get(pi) || []).sort((a, b) => dateKey(a) - dateKey(b));
+    return (
+      <div key={pi} className="space-y-3">
+        {standingsTable(pool, dl)}
+        {dates.map(matchGroup)}
+      </div>
+    );
+  };
+  const safetyNet = sortedDates.filter(d => !owned.has(d)).map(matchGroup);
+
+  // today + upcoming vs earlier split
+  const now = new Date();
+  const todayKey = now.getMonth() * 100 + now.getDate();
+  const dayKeys = [...poolsSorted.map(p => dateKey(p.date)), ...sortedDates.map(dateKey)].filter(k => k >= 0);
+  const within = dayKeys.length > 0 && todayKey >= Math.min(...dayKeys) && todayKey <= Math.max(...dayKeys);
+  let currentIdx = -1;
+  poolsSorted.forEach((p, i) => { const k = dateKey(p.date); if (k >= 0 && k <= todayKey) currentIdx = i; });
+  const pinToday = !data.eventComplete && within && currentIdx >= 0;
+
+  if (!pinToday) {
+    // Not live: chronological. primary renders everything; earlier renders nothing.
+    if (part === 'earlier') return null;
+    return <>{poolsSorted.map(renderPool)}{safetyNet}</>;
+  }
+
+  // current round + any future rounds (chronological), and past rounds below
+  const todayAndFuture = poolsSorted.map((_, i) => i).filter(i => i >= currentIdx);
+  const earlier = poolsSorted.map((_, i) => i).filter(i => i < currentIdx)
+    .sort((a, b) => dateKey(poolsSorted[b].date) - dateKey(poolsSorted[a].date));
+
+  if (part === 'earlier') {
+    if (earlier.length === 0) return null;
+    return (
+      <div>
+        <div className="flex items-center gap-2 px-1 mb-3">
+          <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">Earlier days</span>
+          <div className="h-px flex-1 bg-zinc-800" />
+        </div>
+        <div className="space-y-6">{earlier.map(i => renderPool(poolsSorted[i], i))}</div>
+      </div>
+    );
+  }
+
+  const todayLabel = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  return (
+    <>
+      <div>
+        <div className="flex items-center gap-2 px-1 mb-3">
+          <span className="text-xs font-bold uppercase tracking-widest text-emerald-400">🟢 Today &amp; Upcoming</span>
+          <span className="text-xs text-zinc-500">{todayLabel}</span>
+          <div className="h-px flex-1 bg-emerald-900/60" />
+        </div>
+        <div className="space-y-6">{todayAndFuture.map(i => renderPool(poolsSorted[i], i))}</div>
+      </div>
+      {safetyNet}
+    </>
+  );
+}
+
 interface SavedTournament {
   eventId: string;
   divisionId: string;
@@ -811,217 +1020,9 @@ function HomeContent() {
 
         {view === 'tracker' && data && (
           <>
-            {/* Each round: its pool standings, then that round's matches */}
-            {(() => {
-              const pools = data.pools && data.pools.length > 0
-                ? data.pools
-                : data.poolStandings.length > 0
-                  ? [{ poolName: data.poolName, poolCourt: data.poolCourt, date: '', standings: data.poolStandings }]
-                  : [];
-
-              // Pool matches grouped by date (bracket matches live in Bracket Play)
-              const matchesByDate: Record<string, PoolMatch[]> = {};
-              for (const m of data.matches.filter(m => m.isPoolPlay)) {
-                const d = m.date || 'Date TBA';
-                if (!matchesByDate[d]) matchesByDate[d] = [];
-                matchesByDate[d].push(m);
-              }
-              const year = (data.dates.match(/\b(20\d{2})\b/) || [])[1] || '';
-              // Chronological sort key from a formatted date like "Thu, Jun 25",
-              // so match days order correctly even when a day has no pool of its
-              // own (e.g. Friday continuing Thursday's pool).
-              const monthNames = Object.keys(MONTHS);
-              const dateKey = (formatted: string): number => {
-                const mm = (formatted || '').match(/([A-Za-z]{3,})\s+(\d+)/);
-                if (!mm) return -1;
-                const mon = monthNames.indexOf(mm[1].slice(0, 3));
-                return mon < 0 ? -1 : mon * 100 + parseInt(mm[2]);
-              };
-
-              const matchCard = (m: PoolMatch, i: number) => (
-                <div key={i} className={`bg-zinc-900 rounded-xl border p-4 ${
-                  m.weWon === true ? 'border-emerald-800' :
-                  m.weWon === false ? 'border-red-900' : 'border-zinc-700'
-                }`}>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <span className="text-xs text-zinc-400 font-mono">{m.matchName}</span>
-                        <span className="text-xs text-zinc-500">{m.time}</span>
-                        <span className="text-xs text-zinc-500">{m.court}</span>
-                        {m.isPoolPlay && <span className="text-xs bg-blue-900/50 text-blue-300 px-1.5 py-0.5 rounded">Pool</span>}
-                        {!m.isPoolPlay && <span className="text-xs bg-purple-900/50 text-purple-300 px-1.5 py-0.5 rounded">Bracket</span>}
-                      </div>
-                      {(m.opponent || '').trim()
-                        ? <div className="font-semibold text-white text-base">vs {m.opponent}</div>
-                        : <div className="font-semibold text-zinc-400 italic text-base">Opponent TBD</div>}
-                      <SetScores sets={m.sets} hasScores={m.hasScores} eventComplete={data.eventComplete} />
-                    </div>
-                    {m.weWon !== null && (
-                      <div className={`text-xs font-bold px-2 py-1 rounded shrink-0 ${m.weWon ? 'bg-emerald-900 text-emerald-300' : 'bg-red-900 text-red-300'}`}>
-                        {m.weWon ? 'WIN' : 'LOSS'}
-                      </div>
-                    )}
-                  </div>
-                  {m.workTeam && <div className="mt-2 text-xs text-zinc-500 border-t border-zinc-700 pt-2">Work: {m.workTeam}</div>}
-                </div>
-              );
-
-              const standingsTable = (pool: PoolInfo, dl: { weekday: string; full: string }) => (
-                <div className="bg-zinc-900 rounded-xl border border-zinc-700 overflow-x-auto">
-                  <div className="px-4 py-3 border-b border-zinc-700">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <div className="text-base font-bold text-white">{dl.weekday ? `${dl.weekday}: ` : ''}Pool Standings</div>
-                      {dl.full && <div className="text-xs text-zinc-400 shrink-0">{dl.full}</div>}
-                    </div>
-                    <div className="text-zinc-300 text-sm mt-0.5">{pool.poolName}</div>
-                    <div className="text-zinc-500 text-xs">{pool.poolCourt}</div>
-                    {pool.standings.some(s => s.isUs) && (
-                      <button
-                        onClick={() => setScenarioPool(pool)}
-                        className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-yellow-300 bg-yellow-900/30 hover:bg-yellow-900/50 border border-yellow-800/50 rounded-lg px-2.5 py-1.5 transition-colors"
-                      >
-                        📊 What it takes to place
-                      </button>
-                    )}
-                  </div>
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-zinc-400 text-xs border-b border-zinc-700">
-                        <th className="text-left px-4 py-2">Team</th>
-                        <th className="text-center px-2 py-2">M W-L</th>
-                        <th className="text-center px-2 py-2">S W-L</th>
-                        <th className="text-center px-2 py-2">Rank</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {pool.standings.map((s, i) => (
-                        <tr key={i} className={`border-b border-zinc-700 last:border-0 ${s.isUs ? 'bg-yellow-950/40' : ''}`}>
-                          <td className="px-4 py-3">
-                            <div className={`font-medium ${s.isUs ? 'text-yellow-300' : 'text-zinc-200'}`}>
-                              {s.teamName}
-                            </div>
-                            <div className="text-zinc-500 text-xs">{s.teamCode}</div>
-                            {/* Show the tiebreaker live (once any match is played),
-                                not just after the pool finalizes — that's the
-                                useful view during pool play. */}
-                            {s.tiebreaker && (s.matchesWon + s.matchesLost) > 0 && (
-                              <div className={`text-xs mt-0.5 ${s.isUs ? 'text-yellow-600' : 'text-zinc-500'}`}>
-                                ↑ {s.tiebreaker}
-                              </div>
-                            )}
-                          </td>
-                          <td className="text-center px-2 py-3 text-zinc-300">{s.matchesWon}-{s.matchesLost}</td>
-                          <td className="text-center px-2 py-3 text-zinc-300">{s.setsWon}-{s.setsLost}</td>
-                          <td className="text-center px-2 py-3">
-                            {s.finishRank ? (
-                              <span className={`rounded px-2 py-0.5 text-xs font-bold ${s.isUs ? 'bg-yellow-800 text-yellow-200' : 'bg-zinc-700 text-zinc-200'}`}>
-                                {s.finishRankText || `#${s.finishRank}`}
-                              </span>
-                            ) : <span className="text-zinc-500 text-xs">—</span>}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              );
-
-              return (() => {
-                const poolsSorted = [...pools].sort((a, b) => dateKey(a.date) - dateKey(b.date));
-                const sortedDates = Object.keys(matchesByDate).sort((a, b) => dateKey(a) - dateKey(b));
-                // Each match day belongs to the latest pool round on/before it, so
-                // a pool's extra days stay with that pool instead of sorting after
-                // the next round. Days before any pool fall to the earliest pool.
-                const ownerIndexFor = (d: string): number => {
-                  if (poolsSorted.length <= 1) return poolsSorted.length - 1; // 0, or -1 if no pools
-                  let idx = -1;
-                  poolsSorted.forEach((p, i) => { if (p.date && dateKey(p.date) <= dateKey(d)) idx = i; });
-                  return idx >= 0 ? idx : poolsSorted.findIndex(p => p.date);
-                };
-                const ownedDates = new Map<number, string[]>();
-                const owned = new Set<string>();
-                for (const d of sortedDates) {
-                  const idx = ownerIndexFor(d);
-                  if (idx < 0) continue; // no pool to own it → safety net below
-                  if (!ownedDates.has(idx)) ownedDates.set(idx, []);
-                  ownedDates.get(idx)!.push(d);
-                  owned.add(d);
-                }
-                const matchGroup = (d: string) => {
-                  const ddl = splitDateLabel(d, year);
-                  return (
-                    <div key={d} className="space-y-3">
-                      <div className="flex items-baseline justify-between gap-2 px-1">
-                        <div className="text-base font-bold text-white">{ddl.weekday ? `${ddl.weekday}: ` : ''}Matches</div>
-                        {(ddl.full || d) && <div className="text-xs text-zinc-400 shrink-0">{ddl.full || d}</div>}
-                      </div>
-                      {matchesByDate[d].map(matchCard)}
-                    </div>
-                  );
-                };
-                const renderPool = (pool: PoolInfo, pi: number) => {
-                  const dl = splitDateLabel(pool.date, year);
-                  const dates = (ownedDates.get(pi) || []).sort((a, b) => dateKey(a) - dateKey(b));
-                  return (
-                    <div key={pi} className="space-y-3">
-                      {standingsTable(pool, dl)}
-                      {dates.map(matchGroup)}
-                    </div>
-                  );
-                };
-                const safetyNet = sortedDates.filter(d => !owned.has(d)).map(matchGroup);
-
-                // While the tournament is live (today falls within its days), pull
-                // the current round to the top under a TODAY banner with earlier
-                // rounds below (most-recent-first). Once it's over (or before it
-                // starts) render days in normal first→last order.
-                const now = new Date();
-                const todayKey = now.getMonth() * 100 + now.getDate();
-                const dayKeys = [...poolsSorted.map(p => dateKey(p.date)), ...sortedDates.map(dateKey)].filter(k => k >= 0);
-                const within = dayKeys.length > 0 && todayKey >= Math.min(...dayKeys) && todayKey <= Math.max(...dayKeys);
-                let currentIdx = -1;
-                poolsSorted.forEach((p, i) => { const k = dateKey(p.date); if (k >= 0 && k <= todayKey) currentIdx = i; });
-                const pinToday = !data.eventComplete && within && currentIdx >= 0;
-
-                if (pinToday) {
-                  const earlier = poolsSorted.map((_, i) => i)
-                    .filter(i => i !== currentIdx)
-                    .sort((a, b) => dateKey(poolsSorted[b].date) - dateKey(poolsSorted[a].date));
-                  const todayLabel = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
-                  return (
-                    <>
-                      <div>
-                        <div className="flex items-center gap-2 px-1 mb-3">
-                          <span className="text-xs font-bold uppercase tracking-widest text-emerald-400">🟢 Today</span>
-                          <span className="text-xs text-zinc-500">{todayLabel}</span>
-                          <div className="h-px flex-1 bg-emerald-900/60" />
-                        </div>
-                        {renderPool(poolsSorted[currentIdx], currentIdx)}
-                      </div>
-                      {earlier.length > 0 && (
-                        <div>
-                          <div className="flex items-center gap-2 px-1 mb-3">
-                            <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">Earlier days</span>
-                            <div className="h-px flex-1 bg-zinc-800" />
-                          </div>
-                          <div className="space-y-6">
-                            {earlier.map(i => renderPool(poolsSorted[i], i))}
-                          </div>
-                        </div>
-                      )}
-                      {safetyNet}
-                    </>
-                  );
-                }
-                return (
-                  <>
-                    {poolsSorted.map(renderPool)}
-                    {safetyNet}
-                  </>
-                );
-              })();
-            })()}
+            {/* Today + upcoming rounds (pool standings & matches). Earlier days
+                render lower, below Bracket Play, while the tournament is live. */}
+            <PoolDaysSection data={data} part="primary" onScenario={setScenarioPool} />
 
             {/* Projected Path — chain every finish to a division (win/lose tree),
                 with the next round's opponents folded in (was "Predicted Next Round") */}
@@ -1342,6 +1343,9 @@ function HomeContent() {
                 </div>
               </div>
             )}
+
+            {/* Earlier days' pools — sit below Bracket Play while the event is live */}
+            <PoolDaysSection data={data} part="earlier" onScenario={setScenarioPool} />
 
             {/* Footer */}
             <div className="text-center text-zinc-500 text-xs pb-4 space-y-2">
