@@ -137,13 +137,14 @@ export default function SetupPage() {
 
   // Load every team across all divisions for the chosen event, so a team can
   // be found by name without knowing its division first.
-  const enterTeamSearch = async () => {
-    setTeamSearchMode(true);
-    setError('');
-    if (allTeams.length > 0) return; // already loaded for this event
+  // Load every team across all divisions (for the by-name search). Takes the
+  // event id explicitly so it can run right after picking an event, before the
+  // eventId state has settled.
+  const loadAllTeams = async (evId: string) => {
+    if (!evId) return;
     setLoadingAllTeams(true);
     try {
-      const res = await fetch(`/api/event-teams?event=${eventId}`);
+      const res = await fetch(`/api/event-teams?event=${evId}`);
       const json = await res.json();
       if (json.error) throw new Error(json.error);
       setAllTeams(json.teams || []);
@@ -152,6 +153,13 @@ export default function SetupPage() {
     } finally {
       setLoadingAllTeams(false);
     }
+  };
+
+  // Switch the division step to the by-name team search.
+  const enterTeamSearch = () => {
+    setTeamSearchMode(true);
+    setError('');
+    if (allTeams.length === 0) loadAllTeams(eventId);
   };
 
   // Pick a team from the cross-division search: lock in its division and team,
@@ -185,7 +193,11 @@ export default function SetupPage() {
         setDivisionId(divs[0].id);
         await loadTeams(ev.eventId, divs[0].id);
       } else {
+        // Team-name search is the primary path — open it by default and start
+        // loading the cross-division team list.
+        setTeamSearchMode(true);
         setStep('division');
+        loadAllTeams(ev.eventId);
       }
     } catch (e) {
       setError(String(e));
@@ -359,9 +371,12 @@ export default function SetupPage() {
                 </>
               ) : (
                 <>
-                  {/* Team search across every division in the event */}
+                  {/* Team search across every division in the event (primary path) */}
                   <div>
-                    <label className="block text-sm font-medium text-zinc-300 mb-2">Search team name</label>
+                    <label className="block text-base font-bold text-white mb-1">Search for your team</label>
+                    <p className="text-xs text-zinc-400 mb-2">
+                      Type a team name — we search all {divisions.length} divisions and pick the right one for you.
+                    </p>
                     <input
                       type="text"
                       value={teamQuery}
@@ -370,9 +385,6 @@ export default function SetupPage() {
                       autoFocus
                       className="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 text-sm rounded-lg px-4 py-3 focus:outline-none focus:border-yellow-500 placeholder-zinc-500"
                     />
-                    <p className="text-xs text-zinc-500 mt-1">
-                      Searches all {divisions.length} divisions — its division is picked for you.
-                    </p>
                   </div>
 
                   {error && (

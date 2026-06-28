@@ -469,7 +469,8 @@ interface DivisionData {
   pools: DivisionPool[]; seeds: DivisionSeed[]; courts: DivisionCourt[];
 }
 interface CourtMatch {
-  matchId: number; date: string; start: string; time: string; court: string; play: string;
+  matchId: number; date: string; start: string; time: string; court: string;
+  division: string; play: string;
   team1: string; team2: string; team1Id: number | null; team2Id: number | null;
   hasScores: boolean; scoreText: string;
 }
@@ -1622,7 +1623,7 @@ function HomeContent() {
               return (
                 <div>
                   <div className="text-xs text-zinc-400 uppercase tracking-widest mb-1 px-1">Court Play</div>
-                  <div className="text-xs text-zinc-500 mb-3 px-1">Match schedule by day &amp; court · your division</div>
+                  <div className="text-xs text-zinc-500 mb-3 px-1">Match schedule by day &amp; court · all divisions (bracket play); pool play is your division</div>
                   <div className="flex gap-2 mb-3">
                     <select value={schedDay} onChange={e => { setSchedDay(e.target.value); }}
                       className="flex-1 bg-zinc-800 border border-zinc-700 text-zinc-100 text-sm rounded-lg px-3 py-2 appearance-none focus:outline-none focus:border-yellow-500">
@@ -1645,7 +1646,7 @@ function HomeContent() {
                             <div className="flex items-center gap-2 text-[11px] text-zinc-500 mb-0.5">
                               <span className="font-mono text-zinc-400">{m.time}</span>
                               {!effectiveCourt && <span className="text-zinc-400">{m.court}</span>}
-                              <span className="truncate">{m.play}</span>
+                              <span className="truncate">{m.division}{m.play ? ` · ${m.play}` : ''}</span>
                               {m.hasScores && m.scoreText && <span className="ml-auto font-mono text-zinc-400 shrink-0">{m.scoreText}</span>}
                             </div>
                             <div className="text-sm text-zinc-200">

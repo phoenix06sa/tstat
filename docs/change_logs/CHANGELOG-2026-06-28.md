@@ -32,6 +32,31 @@ Files: `app/page.tsx`.
 
 Files: `app/page.tsx`.
 
+## 3. Court Play: all divisions (bracket play)
+
+Court Play was scoped to our division, which wasn't that useful — a floor hosts
+many divisions through the day. Now `/api/court-schedule` aggregates **bracket
+matches across every division** (24 here) from each division's plays endpoint,
+each row tagged with its division. Our division's **pool** matches still come
+from its team schedules (pool match grids aren't reachable for other divisions).
+
+- Verified court 67 ICC on 2026-06-28 reproduces the full AES schedule across
+  divisions: 8 AM (14 American) → 9–11 AM (14 USA Silver A) → 12–2 PM (14
+  American), with real team names. 946 matches / 100 courts.
+- Cost note: ~150 cached requests (other divisions only on bracket days), so the
+  first cold load on a big event takes a beat; fine thereafter.
+
+Files: `app/api/court-schedule/route.ts`, `app/page.tsx`.
+
+## 4. Setup: team-name search is the primary path
+
+Adding a team meant picking a division first, with by-name search hidden behind a
+button. Flipped it: on the division step, **"Search for your team"** is shown by
+default (loads the cross-division team list automatically), with "pick a division
+from the list" and the paste-a-URL shortcut as the secondary options.
+
+Files: `app/setup/page.tsx`.
+
 ---
 
 ## Verified
@@ -40,3 +65,5 @@ Files: `app/page.tsx`.
 - Machine date Sun Jun 28, `eventComplete=false`: pins 🟢 Today + Bracket Play on
   top, Round 2/Round 1 pools under "Earlier days"; reverts to chronological once
   the event completes.
+- Court Play all-divisions: 946 matches / 100 courts; our division's 06-25 pool
+  matches still present (48).
