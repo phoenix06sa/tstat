@@ -385,13 +385,14 @@ function PoolDaysSection({ data, part, onScenario }: {
   // today + upcoming vs earlier split
   const now = new Date();
   const todayKey = now.getMonth() * 100 + now.getDate();
-  const dayKeys = [...poolsSorted.map(p => dateKey(p.date)), ...sortedDates.map(dateKey)].filter(k => k >= 0);
-  // Pin "today" whenever the tournament has started and isn't complete. The end
-  // is the eventComplete flag — NOT the last pool day — so the final bracket-only
-  // day (no new pool) still counts as today and reverts to chronological only
-  // once the event is actually over.
-  const started = dayKeys.length > 0 && todayKey >= Math.min(...dayKeys);
-  const pinToday = !data.eventComplete && started;
+  // Pin "today" only while today falls within the event's actual days. Include
+  // bracket days so the window's end is the LAST day of play (the final bracket
+  // day), not the last pool day — otherwise the final day wouldn't pin. We can't
+  // rely on `eventComplete` here: AES leaves it false even days after the event,
+  // so this date window is what reverts to chronological once it's over.
+  const bracketKeys = (data.bracketCards || []).map(c => dateKey(c.bracketDate)).filter(k => k >= 0);
+  const dayKeys = [...poolsSorted.map(p => dateKey(p.date)), ...sortedDates.map(dateKey), ...bracketKeys].filter(k => k >= 0);
+  const pinToday = dayKeys.length > 0 && todayKey >= Math.min(...dayKeys) && todayKey <= Math.max(...dayKeys);
 
   if (!pinToday) {
     // Not live: chronological. primary renders everything; earlier renders nothing.
